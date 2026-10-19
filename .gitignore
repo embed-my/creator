@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.local
+.DS_Store
+
+# h5p-verify, run by hand
+*.verify/
+
+# Playwright
+test-results/
+playwright-report/

@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>H5P from your text</title>
+    <link rel="stylesheet" href="/src/app.css" />
+    <script type="module" src="/src/main.js"></script>
+  </head>
+
+  <body>
+    <header class="bar">
+      <h1>H5P from your text</h1>
+      <div class="bar-actions">
+        <!-- Shown by create.js where Chrome's on-device model is there or can be downloaded. -->
+        <button type="button" class="primary" id="create" hidden>Create from your text</button>
+        <label class="button">Open a file<input type="file" id="file" accept=".h5p,application/zip" hidden /></label>
+        <!-- For a file Create made: it exists only in this browser until it is saved. -->
+        <a class="button" id="save" download hidden>Save</a>
+      </div>
+    </header>
+
+    <main>
+      <section class="home" id="home">
+        <p class="create-offer" id="create-offer" hidden>
+          <strong>No file yet?</strong> Paste your own text, and the AI model built into Chrome makes a
+          quiz, a true-or-false set, a gap text or flashcards from it, on this device.
+        </p>
+        <p class="no-model" id="no-model" hidden>
+          Creating needs desktop Chrome 148 or later, on a computer that runs its built-in AI model. You
+          can still open and play <code>.h5p</code> files here.
+        </p>
+      </section>
+      <h5p-player libraries="pack" resume="device" hidden></h5p-player>
+    </main>
+
+    <!-- Create: filled in by the teacher, read by create.js. `novalidate` is not set, so an empty
+         text is refused by the browser before anything starts. -->
+    <dialog class="create-dialog" id="create-dialog" aria-labelledby="create-title">
+      <form id="create-form">
+        <h2 id="create-title">Create from your text</h2>
+        <p>Chrome's built-in model writes an H5P activity from your text, on this device. Nothing is
+          sent anywhere.</p>
+        <label class="create-label" for="create-text">Your text</label>
+        <textarea id="create-text" name="text" rows="8" maxlength="6000" required
+          placeholder="A passage, your notes or a lesson summary: everything in the activity comes from it."></textarea>
+        <fieldset class="create-kinds">
+          <legend class="create-label">Make</legend>
+          <div class="mode">
+            <label><input type="radio" name="kind" value="quiz" checked />Quiz</label>
+            <label><input type="radio" name="kind" value="true-false" />True or false</label>
+            <label><input type="radio" name="kind" value="blanks" />Fill in the blanks</label>
+            <label><input type="radio" name="kind" value="cards" />Flashcards</label>
+          </div>
+        </fieldset>
+        <div class="create-row">
+          <label class="create-label">How many
+            <select name="count">
+              <option>3</option>
+              <option selected>5</option>
+              <option>8</option>
+              <option>10</option>
+            </select>
+          </label>
+          <!-- The Prompt API's languages. -->
+          <label class="create-label">Language
+            <select name="language">
+              <option value="en">English</option>
+              <option value="de" lang="de">Deutsch</option>
+              <option value="es" lang="es">Español</option>
+              <option value="fr" lang="fr">Français</option>
+              <option value="ja" lang="ja">日本語</option>
+            </select>
+          </label>
+        </div>
+        <p class="create-note">The model can get things wrong. Check every item before you share the file.</p>
+        <p class="create-status" id="create-status" role="status" aria-live="polite"></p>
+        <div class="dialog-actions">
+          <button type="button" id="create-cancel">Cancel</button>
+          <button type="submit" class="primary" id="create-submit">Create</button>
+        </div>
+      </form>
+    </dialog>
+  </body>
+</html>
