@@ -82,14 +82,18 @@ the semantics, so the model learns what a field means from H5P's own words. `out
 focus)` renders the part a turn is about as short numbered lines:
 
 ```text
-t1 Title [html: strong em sub sup code]: The water cycle
+t1 Title [html: strong em sub sup code]: "The water cycle"
 Question 1 (True/False Question)
-t2   Question [html: strong em sub sup code]: Rain falls upwards.
+t2   Question [html: strong em sub sup code]: "Rain falls upwards."
 s1   Correct answer [true/false]: false
-t3   Feedback on correct answer [text]: Gravity pulls it down.
+t3   Feedback on correct answer [text]: "Gravity pulls it down."
 ```
 
-The ids are aliases for this turn only; code keeps the map to paths.
+The ids are aliases for this turn only; code keeps the map to paths. A text value is in quotation
+marks, as the answer's JSON writes it, and the system prompt shows one line and an answer for
+it, so the model knows which part of a line is the value. Without them, Chrome's model wrote
+`[html: strong em sub sup code]: The Water Cycle` as a title on 2026-10-20; an answer that
+repeats an id, a field's name, its format or the quotation marks is refused with that rule.
 
 **Where HTML goes is told, not filtered.** Each text field's format comes from its own
 semantics: a field without `tags` is `[text]`, plain text; a field with `tags` is `[html: …]`,
@@ -128,6 +132,27 @@ boolean, a number in range, one of a select's options, a string), so a wrong id 
 cannot be written. The schema is not sent to the model as text (`omitResponseConstraintInput`):
 the system prompt describes the answer in words, and the window is small. `reply` is the one
 sentence the chat shows.
+
+**Another language.** A translation is not an edit like the others: it concerns every field,
+and it changes the content's language, which is structure. So code runs it (`edit/translate.js`),
+and the model only translates:
+
+1. Every turn starts with a narrow question in a session of its own: does the teacher ask for the
+   activity, or all of it, in another language, and which (`translationIntent`)?
+2. If so, the content's text fields are translated in batches small enough for the window, every
+   id of a batch required by the schema, so none can be left out, each answer checked against
+   the fields' formats like any edit, with one second try (`translateContent`).
+3. `relabel` gives every text field still holding the old language's default the new
+   language's, from the pack's `language/<code>.json` — the content type's buttons, messages
+   and labels — and `h5p.json` gets the new language, as H5P's editor does; a default the author
+   changed is left alone. The player's `lang` follows, so H5P's own words (Fullscreen, Rights of
+   use) change too.
+
+Any other request is an ordinary edit, and a language change in it nobody asked for is still
+noticed: Chrome's on-device language detector (`model/detect.js`) reads the content's words
+after the edit (`decideLanguage`). On 2026-10-20 Chrome's model, asked to "translate everything"
+as an ordinary edit, translated part of the content and did not say the language had changed;
+the buttons stayed in the old one. Two fixes that leaned on the model to say so did not hold.
 
 **Checks and the loop.** `check(params, semantics)` is the app's own: types, required fields,
 ranges, options, list lengths, allowed tags, libraries the pack has. A violation goes back to the

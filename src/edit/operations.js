@@ -52,11 +52,22 @@ export function applyChanges(params, changes, byId) {
   return { params: next, applied, violations }
 }
 
+/**
+ * A value that repeats the outline line round it: an id, the field's format in brackets, a
+ * quotation mark at each end. The model was asked for the value alone.
+ */
+const ECHO = /^\s*(?:[ts]\d+\b|[^"\n]{0,80}\[(?:text|html:[^\]\n]*)(?:;[^\]\n]*)?\])/
+
 /** @returns {{ value: any } | { problem: string, kind: 'format' | 'value' }} */
 function parse(node, given) {
   const { field } = node
   switch (node.kind) {
     case 'text': {
+      const raw = String(given ?? '')
+      const quoted = /^\s*["“„«].*["”»]\s*$/s.test(raw) && !/^["“„«]/.test(node.text ?? '')
+      if (ECHO.test(raw) || quoted) {
+        return { problem: 'Write only the new text: not the id, the field\'s name or its format in brackets, and no quotation marks round it.', kind: 'format' }
+      }
       const checked = checkModelText(given, node.format)
       if ('problem' in checked) return { problem: checked.problem, kind: 'format' }
       if (field.maxLength && checked.text.length > field.maxLength) return { problem: `At most ${field.maxLength} characters.`, kind: 'value' }
