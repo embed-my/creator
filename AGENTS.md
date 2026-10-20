@@ -90,7 +90,6 @@ src/
                       semantics lazily, so they are chunks of their own; shows the model
                       download's progress, an elapsed-time line while the model writes, and
                       plain-language errors
-  model/detect.js     Chrome's language detector, the same small interface
   model/nano.js       Chrome's model behind the one interface the app talks to: availability,
                       a session with a system prompt, prompt(text, { schema }), quota. Nothing
                       else touches LanguageModel
@@ -101,10 +100,7 @@ src/
                       breaking it, with the rule; the Blanks dialect
   edit/               operations.js: { changes } applied with each field's checks, refusals by
                       id and kind (id, format, value); prompt.js: the system prompt defining
-                      the formats, the turn, the fix round, and the per-turn schema;
-                      language.js: relabel(), the content type's own words into a new language, and
-                      decideLanguage() with the detector; translate.js: translationIntent() and
-                      translateContent(), a translation run by code in batches
+                      the formats, the turn, the fix round, and the per-turn schema
   package/            read.js: h5p.json and content.json from a file; working-copy.js: the
                       edited file for the player, the original bytes referenced, not copied
 evals/                the editing spine against the real model, by hand: samples (tasks.js), the

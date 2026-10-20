@@ -21,11 +21,8 @@ player.pack = pack
 /** The object URL behind Save, revoked when another file takes its place. */
 let saved = null
 
-/**
- * Plays a file, and offers Save when Create made it, since it exists nowhere else yet. H5P's own
- * words — Fullscreen, Rights of use — are in the content's language, as its `h5p.json` says.
- */
-async function play(file, { created = false } = {}) {
+/** Plays a file, and offers Save when Create made it, since it exists nowhere else yet. */
+function play(file, { created = false } = {}) {
   if (saved) URL.revokeObjectURL(saved)
   saved = created ? URL.createObjectURL(file) : null
   save.hidden = !created
@@ -35,12 +32,6 @@ async function play(file, { created = false } = {}) {
   }
   $('#home').hidden = true
   player.hidden = false
-  const language = await import('./package/read.js')
-    .then(({ readPackage }) => readPackage(file))
-    .then(({ manifest }) => (typeof manifest.language === 'string' && manifest.language !== 'und' ? manifest.language : null))
-    .catch(() => null)
-  if (language) player.setAttribute('lang', language)
-  else player.removeAttribute('lang')
   player.file = file
 }
 

@@ -133,26 +133,10 @@ cannot be written. The schema is not sent to the model as text (`omitResponseCon
 the system prompt describes the answer in words, and the window is small. `reply` is the one
 sentence the chat shows.
 
-**Another language.** A translation is not an edit like the others: it concerns every field,
-and it changes the content's language, which is structure. So code runs it (`edit/translate.js`),
-and the model only translates:
-
-1. Every turn starts with a narrow question in a session of its own: does the teacher ask for the
-   activity, or all of it, in another language, and which (`translationIntent`)?
-2. If so, the content's text fields are translated in batches small enough for the window, every
-   id of a batch required by the schema, so none can be left out, each answer checked against
-   the fields' formats like any edit, with one second try (`translateContent`).
-3. `relabel` gives every text field still holding the old language's default the new
-   language's, from the pack's `language/<code>.json` — the content type's buttons, messages
-   and labels — and `h5p.json` gets the new language, as H5P's editor does; a default the author
-   changed is left alone. The player's `lang` follows, so H5P's own words (Fullscreen, Rights of
-   use) change too.
-
-Any other request is an ordinary edit, and a language change in it nobody asked for is still
-noticed: Chrome's on-device language detector (`model/detect.js`) reads the content's words
-after the edit (`decideLanguage`). On 2026-10-20 Chrome's model, asked to "translate everything"
-as an ordinary edit, translated part of the content and did not say the language had changed;
-the buttons stayed in the old one. Two fixes that leaned on the model to say so did not hold.
+**Another language is an edit like any other.** The model translates the author's words, and
+nothing else changes. The content type's buttons and messages and H5P's own words (Fullscreen,
+Rights of use) are shown in the content's language by the player, not rewritten by the editor
+(decided 2026-10-20).
 
 **Checks and the loop.** `check(params, semantics)` is the app's own: types, required fields,
 ranges, options, list lengths, allowed tags, libraries the pack has. A violation goes back to the
@@ -299,3 +283,4 @@ without seeing a field or a line of JSON.
 | Backend | None. |
 | Done means | A worksheet becomes an importable activity in ten minutes, with no forms. |
 | First slice | Open any text-typed `.h5p`, edit its text by chat with Chrome's model, undo, export with libraries. |
+| Interface language | The player's job: it shows its own words in the content's language. The editor does not relabel them (2026-10-20). |

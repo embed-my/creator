@@ -4,10 +4,8 @@ import { join } from 'node:path'
 import { verifyPackage, summarize } from '@missing-elements/h5p-verify'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { contentFrom, packageFrom } from '../src/authoring.js'
-import { contentTexts, decideLanguage, relabel } from '../src/edit/language.js'
 import { applyChanges } from '../src/edit/operations.js'
-import { INTENT_SCHEMA, editSchema, editSystem, fixPrompt, intentPrompt, translateSchema } from '../src/edit/prompt.js'
-import { batches, translateContent, translationIntent } from '../src/edit/translate.js'
+import { editSchema, editSystem, fixPrompt } from '../src/edit/prompt.js'
 import { readPackage } from '../src/package/read.js'
 import { withContent } from '../src/package/working-copy.js'
 import { contentModel, editable } from '../src/semantics/content-model.js'
@@ -234,7 +232,7 @@ describe('the edits', () => {
     expect(system).toContain('[text]: plain text only. No HTML tags')
     expect(system).toContain('Never use <p>, <div>, <br>, <h1> to <h6> or <a>')
     expect(system).toContain('The activity is in German')
-    expect(system).toContain('Write in that language.')
+    expect(system).toContain('Keep that language unless the teacher asks for another.')
     const content = quiz()
     const schema = editSchema(outlineOf(content, { settings: true }).byId)
     expect(schema.required).toEqual(['changes', 'reply'])
@@ -243,57 +241,6 @@ describe('the edits', () => {
     expect(schema.properties.changes.properties.s1).toEqual({ type: 'boolean' })
     const progress = Object.values(schema.properties.changes.properties).find((each) => 'enum' in each)
     expect(progress).toEqual({ type: 'string', enum: ['textual', 'dots'] })
-    // The language is not the edit's to say: a translation is its own run.
-    expect('language' in schema.properties).toBe(false)
-  })
-})
-
-describe('another language', () => {
-  const GERMAN = { title: 'Der Wasserkreislauf', statements: [{ statement: 'Regen fällt nach oben.', isTrue: false, explanation: 'Die Schwerkraft zieht ihn nach unten.' }] }
-
-  it("is decided by code: the detector's reading first, the model's word where there is no detector or it agrees", () => {
-    const de = (confidence: number) => [{ language: 'de', confidence }, { language: 'en', confidence: 1 - confidence }]
-    // The model translated and forgot to say so: the text says German.
-    expect(decideLanguage({ current: 'en', stated: 'en', detected: de(0.97) })).toEqual({ language: 'de', by: 'detected' })
-    // The model said German, but the text is still English: nothing changes.
-    expect(decideLanguage({ current: 'en', stated: 'de', detected: [{ language: 'en', confidence: 0.99 }] })).toEqual({ language: 'en', by: 'kept' })
-    // Unsure, as with mixed text: the model's word where the detector leans the same way, else nothing.
-    expect(decideLanguage({ current: 'en', stated: 'de', detected: de(0.6) })).toEqual({ language: 'de', by: 'stated and detected' })
-    expect(decideLanguage({ current: 'en', stated: 'fr', detected: de(0.6) })).toEqual({ language: 'en', by: 'kept' })
-    // No detector, or too little text: the model's word, if it names one of the model's languages.
-    expect(decideLanguage({ current: 'en', stated: 'de', detected: null })).toEqual({ language: 'de', by: 'stated' })
-    expect(decideLanguage({ current: 'en', stated: 'xx', detected: null })).toEqual({ language: 'en', by: 'kept' })
-    // A language the pack has no translations for is not one to relabel into.
-    expect(decideLanguage({ current: 'en', stated: 'en', detected: [{ language: 'nl', confidence: 0.99 }] })).toEqual({ language: 'en', by: 'kept' })
-  })
-
-  it("gives the detector the content's own words, without tags or blanks", () => {
-    const german = contentFrom('true-false', GERMAN, { pack, language: 'de' })
-    expect(contentTexts(german.params, main(german), pack, 'de')).toBe('Der Wasserkreislauf\nRegen fällt nach oben.\nDie Schwerkraft zieht ihn nach unten.\nDie Schwerkraft zieht ihn nach unten.')
-    const blanks = contentFrom('blanks', { title: 'Words', sentences: [{ sentence: 'Evaporation is driven by the Sun.', answer: 'Sun' }] }, { pack })
-    expect(contentTexts(blanks.params, main(blanks), pack, 'en')).toBe('Evaporation is driven by the Sun.')
-  })
-
-  it("gives the content type's own words the new language's defaults, and leaves the author's alone", () => {
-    const german = contentFrom('true-false', GERMAN, { pack, language: 'de' })
-    expect(german.params.introPage.startButtonText).toBe('Quiz starten')
-    const { params, relabelled } = relabel(german.params, main(german), pack, 'de', 'en')
-    expect(relabelled).toBeGreaterThan(20)
-    expect(params.introPage.startButtonText).toBe('Start Quiz')
-    expect(params.texts.finishButton).toBe('Finish')
-    expect(params.questions[0].params.l10n.trueText).toBe('True')
-    // The author's words are the model's to translate.
-    expect(params.introPage.title).toBe('Der Wasserkreislauf')
-    expect(params.questions[0].params.behaviour.feedbackOnWrong).toBe('Die Schwerkraft zieht ihn nach unten.')
-    // A default the author changed is theirs.
-    const changed = structuredClone(german.params)
-    changed.texts.finishButton = 'Fertig!'
-    expect(relabel(changed, main(german), pack, 'de', 'en').params.texts.finishButton).toBe('Fertig!')
-    // Relabelled, it is what a quiz made in English would be, but for the words.
-    const english = contentFrom('true-false', { ...GERMAN, statements: [{ ...GERMAN.statements[0] }] }, { pack, language: 'en' })
-    expect(params.texts).toEqual(english.params.texts)
-    expect(params.questions[0].params.l10n).toEqual(english.params.questions[0].params.l10n)
-    expect(params.endGame.solutionButtonText).toBe(english.params.endGame.solutionButtonText)
   })
 })
 
@@ -306,11 +253,9 @@ describe('the working copy and the package', () => {
     expect(read.params).toEqual(content.params)
 
     const { byId } = outlineOf(content)
-    const { params: edited, violations } = applyChanges(content.params, { t1: 'Wasser auf der Erde', t2: 'Was treibt H<sub>2</sub>O zum <strong>Verdunsten</strong>?' }, byId)
+    const { params, violations } = applyChanges(content.params, { t1: 'Water on Earth', t2: 'What <strong>drives</strong> H<sub>2</sub>O to evaporate?' }, byId)
     expect(violations).toEqual([])
-    // Into German, buttons and all: still what a site would have saved.
-    const { params } = relabel(edited, main(content), pack, 'en', 'de')
-    const copy = await withContent(original, { params, manifest: { ...content.manifest, title: 'Water on Earth', language: 'de', defaultLanguage: 'de' } })
+    const copy = await withContent(original, { params, manifest: { ...content.manifest, title: 'Water on Earth' } })
     expect(copy.size).toBeGreaterThan(original.size)
     const again = await readPackage(copy)
     expect(again.params).toEqual(params)
@@ -323,73 +268,5 @@ describe('the working copy and the package', () => {
     expect(report.verdict, summarize(report)).toBe('pass')
     expect(report.contentCheck?.changes).toEqual([])
     expect(report.warnings).toEqual([])
-  })
-})
-
-/**
- * A model as `model/nano.js` offers one, answering from `answer(prompt, schema)`, and keeping
- * every prompt it was asked and every session's system prompt.
- */
-function fakeModel(answer: (prompt: string, schema: any) => unknown) {
-  const asked: { system: string; prompt: string; schema: any }[] = []
-  return {
-    asked,
-    session: async ({ system }: { system: string }) => ({
-      prompt: async (prompt: string, { schema }: { schema: any }) => {
-        asked.push({ system, prompt, schema })
-        return JSON.stringify(answer(prompt, schema))
-      },
-      quota: () => ({ used: 1000, total: 6000 }),
-      destroy: () => {}
-    })
-  }
-}
-
-describe('a translation', () => {
-  it('starts with a question of its own: does the request ask for another language, and which', async () => {
-    expect(intentPrompt('Translate everything into German.', 'en')).toContain('The teacher\'s request: "Translate everything into German."')
-    expect(INTENT_SCHEMA.properties.translateTo.enum).toEqual(['none', 'en', 'de', 'es', 'fr', 'ja'])
-    for (const [said, expected] of [['de', 'de'], ['none', null], ['en', null], ['xx', null]] as const) {
-      const model = fakeModel(() => ({ translateTo: said }))
-      expect(await translationIntent(model, { message: 'Translate it', language: 'en' })).toBe(expected)
-    }
-  })
-
-  it('goes in batches that fit the window, text fields only', () => {
-    const content = contentFrom('quiz', QUIZ, { pack })
-    const { byId } = outlineOf(content, { settings: true })
-    const all = batches(byId)
-    expect(all.flat()).toEqual([...byId.keys()].filter((id) => id.startsWith('t')))
-    expect(batches(byId, { fields: 4 }).map((batch) => batch.length)).toEqual([4, 4, 2])
-    // The schema of a batch requires every field in it.
-    const schema = translateSchema(byId, ['t1', 't2'])
-    expect(schema.properties.changes.required).toEqual(['t1', 't2'])
-    expect(schema.properties.changes.additionalProperties).toBe(false)
-  })
-
-  it('translates every field, refuses what breaks its format, tries once more, and says what was left out', async () => {
-    const content = contentFrom('quiz', QUIZ, { pack })
-    const { byId } = outlineOf(content)
-    const texts = new Map([...byId].filter(([, node]) => node.kind === 'text'))
-    const model = fakeModel((prompt) => {
-      if (prompt.startsWith('These changes could not be used')) return { changes: { t1: 'Der Wasserkreislauf' } }
-      const changes: Record<string, string> = {}
-      for (const [, id, value] of prompt.matchAll(/^(t\d+) [^[\n]*\[[^\]]*\]: (".*")$/gm)) changes[id] = `DE ${JSON.parse(value)}`
-      changes.t1 = '<h1>Der Wasserkreislauf</h1>'
-      delete changes.t9
-      // A word that reads the same in both languages comes back unchanged: not missing.
-      changes.t8 = 'Precipitation'
-      return { changes }
-    })
-    const result = await translateContent(model, { params: content.params, byId: texts, from: 'en', to: 'de' })
-    expect(model.asked[0].system).toContain('from English into German')
-    expect(result.batches).toBe(1)
-    expect(result.formatBreaks).toBe(1)
-    expect(result.tries).toBe(2)
-    expect(result.params.introPage.title).toBe('Der Wasserkreislauf')
-    expect(result.params.questions[0].params.question).toBe('<p>DE What drives evaporation?</p>')
-    expect(result.violations).toEqual([{ id: 't9', label: 'Text', kind: 'value', problem: 'Left out of the translation.' }])
-    expect(result.applied).toHaveLength(8)
-    expect(result.answers).toHaveLength(2)
   })
 })

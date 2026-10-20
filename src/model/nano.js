@@ -17,13 +17,12 @@
 
 /**
  * The options for a language: the instructions are English, the content and the answer in the
- * language chosen, and in `outputs` too where an answer may be in another (an edit that
- * translates).
+ * language chosen.
  */
-export function languageOptions(language, outputs = []) {
+export function languageOptions(language) {
   return {
     expectedInputs: [{ type: 'text', languages: [...new Set(['en', language])] }],
-    expectedOutputs: [{ type: 'text', languages: [...new Set([language, ...outputs])] }]
+    expectedOutputs: [{ type: 'text', languages: [language] }]
   }
 }
 
@@ -40,9 +39,9 @@ export const nano = {
     }
   },
 
-  async session({ system, language = 'en', outputs = [], signal, onDownload } = {}) {
+  async session({ system, language = 'en', signal, onDownload } = {}) {
     const session = await globalThis.LanguageModel.create({
-      ...languageOptions(language, outputs),
+      ...languageOptions(language),
       initialPrompts: system ? [{ role: 'system', content: system }] : [],
       signal,
       monitor(monitor) {
