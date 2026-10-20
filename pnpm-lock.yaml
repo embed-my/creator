@@ -12,8 +12,8 @@ importers:
         specifier: ^1.0.0
         version: 1.0.0
       '@missing-elements/h5p-offline-player':
-        specifier: ^1.0.1
-        version: 1.0.1(@missing-elements/h5p-runtime@1.0.0)
+        specifier: ^1.1.0
+        version: 1.1.0(@missing-elements/h5p-runtime@1.0.0)
       '@missing-elements/h5p-runtime':
         specifier: ^1.0.0
         version: 1.0.0
@@ -56,8 +56,8 @@ packages:
     resolution: {integrity: sha512-Ii9naBozRohB2THKckOlutgVd4AYoLT7CXQf9hiavDGGGCYfz84a/4scVOC5Mz98ryetI8tar2EjZ5r9zjUDCQ==}
     engines: {node: '>=20'}
 
-  '@missing-elements/h5p-offline-player@1.0.1':
-    resolution: {integrity: sha512-u3uBWd7uWnlaDhB5bVHHbDipMgqhOsTlqEaei/u6d1KVBYZAkdazZuXMOuHg6ylYa8bdcp6L6aiYlXU+e0wNOA==}
+  '@missing-elements/h5p-offline-player@1.1.0':
+    resolution: {integrity: sha512-ZsORquiBgeTKIMYMBdoeGQHMWljnihmjcEm78YPNlowyJnj5NN6ZM2IhPdjGKhwNi9xQnK37saeZB7FrmCcsGA==}
     engines: {node: '>=20'}
     peerDependencies:
       '@missing-elements/h5p-runtime': ^1.0.0
@@ -598,7 +598,7 @@ snapshots:
 
   '@missing-elements/h5p-libraries@1.0.0': {}
 
-  '@missing-elements/h5p-offline-player@1.0.1(@missing-elements/h5p-runtime@1.0.0)':
+  '@missing-elements/h5p-offline-player@1.1.0(@missing-elements/h5p-runtime@1.0.0)':
     dependencies:
       '@zip.js/zip.js': 2.24.0
     optionalDependencies:
@@ -608,7 +608,7 @@ snapshots:
 
   '@missing-elements/h5p-verify@1.0.0':
     dependencies:
-      '@missing-elements/h5p-offline-player': 1.0.1(@missing-elements/h5p-runtime@1.0.0)
+      '@missing-elements/h5p-offline-player': 1.1.0(@missing-elements/h5p-runtime@1.0.0)
       '@missing-elements/h5p-runtime': 1.0.0
       playwright-core: 1.64.1
 
