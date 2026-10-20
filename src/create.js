@@ -1,24 +1,15 @@
 /**
- * Create: a teacher's own text made into an H5P file by Chrome's on-device model, through the
- * Prompt API (`LanguageModel`, on the web since Chrome 148, on the desktop). The text and what the
- * model writes stay on the device. Offered only where the browser has the model or can download it:
- * Firefox, Safari, Android and iOS never see the button. What the model is asked, and how its
- * answer becomes a package, is `authoring.js`, loaded with the pack's semantics the first time
- * Create is used, so the app's first load carries neither.
+ * Create: a teacher's own text made into an H5P file by Chrome's on-device model, through
+ * `model/nano.js`. The text and what the model writes stay on the device. Offered only where the
+ * browser has the model or can download it: Firefox, Safari, Android and iOS never see the
+ * button. What the model is asked, and how its answer becomes a package, is `authoring.js`,
+ * loaded with the pack's semantics the first time Create is used, so the app's first load
+ * carries neither.
  */
+
+import { nano } from './model/nano.js'
 
 const $ = (selector) => document.querySelector(selector)
-
-/**
- * The Prompt API's options for a language: the instructions are English, the teacher's text and the
- * answer are in the language chosen. `availability()` is asked with the options `create()` gets.
- */
-function modelOptions(language) {
-  return {
-    expectedInputs: [{ type: 'text', languages: [...new Set(['en', language])] }],
-    expectedOutputs: [{ type: 'text', languages: [language] }]
-  }
-}
 
 /** A problem worth saying in the teacher's words, not the API's. */
 class CreateError extends Error {}
@@ -28,14 +19,8 @@ class CreateError extends Error {}
  * handed the package as a `File`, to open as any picked file is.
  */
 export async function createOffer({ onCreated }) {
-  const model = globalThis.LanguageModel
-  if (typeof model?.availability !== 'function') return null
-  try {
-    // 'downloadable' and 'downloading' count: the first Create downloads the model, with its progress shown.
-    if ((await model.availability(modelOptions('en'))) === 'unavailable') return null
-  } catch {
-    return null
-  }
+  // 'downloadable' and 'downloading' count: the first Create downloads the model, with its progress shown.
+  if ((await nano.availability('en')) === 'unavailable') return null
 
   const dialog = $('#create-dialog')
   const form = $('#create-form')
@@ -100,14 +85,13 @@ export async function createOffer({ onCreated }) {
 }
 
 /**
- * Asks the model and makes the package: the model's options checked for the language, the session
- * started — which downloads the model the first time, from the click that asked — and its answer,
- * held to the kind's shape, made into content.
+ * Asks the model and makes the package: the model's availability checked for the language, the
+ * session started — which downloads the model the first time, from the click that asked — and
+ * its answer, held to the kind's shape, made into content.
  */
 async function create({ text, kind, count, language }, signal, say) {
-  const options = modelOptions(language)
   const [availability, authoring, pack] = await Promise.all([
-    LanguageModel.availability(options),
+    nano.availability(language),
     import('./authoring.js'),
     import('virtual:h5p-authoring-pack').then((module) => module.default)
   ])
@@ -115,13 +99,11 @@ async function create({ text, kind, count, language }, signal, say) {
 
   const { system, prompt, schema } = authoring.promptFor(kind, { text, count, language })
   say(availability === 'available' ? 'Starting the model…' : "Downloading Chrome's model. The first time takes a while…")
-  const session = await LanguageModel.create({
-    ...options,
-    initialPrompts: [{ role: 'system', content: system }],
+  const session = await nano.session({
+    system,
+    language,
     signal,
-    monitor(monitor) {
-      monitor.addEventListener('downloadprogress', (event) => say(`Downloading Chrome's model: ${Math.round(event.loaded * 100)}%`))
-    }
+    onDownload: (loaded) => say(`Downloading Chrome's model: ${Math.round(loaded * 100)}%`)
   })
 
   const started = Date.now()
@@ -129,7 +111,7 @@ async function create({ text, kind, count, language }, signal, say) {
   writing()
   const clock = setInterval(writing, 1000)
   try {
-    const answer = await session.prompt(prompt, { responseConstraint: schema, signal })
+    const answer = await session.prompt(prompt, { schema, signal })
     let parsed
     try {
       parsed = JSON.parse(answer)

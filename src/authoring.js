@@ -282,7 +282,7 @@ class Author extends ContentGenerator {
 }
 
 /** The pack's part as the generator takes it, its semantics translated into `language`. */
-function packFor(pack, language) {
+export function packFor(pack, language) {
   return new Map(
     pack.libraries.map((entry) => [entry.folder, { folder: entry.folder, library: entry.library, semantics: translated(entry.semantics, entry.translations?.[language]) }])
   )

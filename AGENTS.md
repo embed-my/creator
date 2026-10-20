@@ -5,10 +5,19 @@ visiting the repository.
 
 ## What this is
 
-An installable web app (PWA) that makes H5P content from text a teacher pastes, using Chrome's
-on-device model, and plays it at once. The text and what the model writes stay on the device, and
-the app works offline once installed. It started on 2026-10-18 as a draft in
-missing-elements/h5p-offline-player (issue #47) and moved here the same night.
+An H5P editor driven by chat, in an installable web app (PWA): a teacher creates an activity from
+their own text or opens an existing `.h5p`, says what should change, and the change plays at
+once. Chrome's on-device model writes the words; code writes the structure; there are no forms.
+The text and what the model writes stay on the device, and the app works offline once installed.
+
+[ARCHITECTURE.md](ARCHITECTURE.md) is the design: the modules, the flows, the rules every module
+follows, and what comes later and where it plugs in. The first version is deliberately small —
+Chrome's model only, text-only content types — and is the base the rest grows from. The bet it
+rests on: that Chrome's small model can edit the text of text-typed content well. If it can, the
+base holds for other models and types.
+
+It started on 2026-10-18 as a draft in missing-elements/h5p-offline-player (issue #47) and moved
+here the same night. Creating from pasted text (four kinds) is built; editing is not yet.
 
 It is built on the published packages, installed from npm like any other site that uses them:
 
@@ -69,11 +78,24 @@ src/
                       characters), contentFrom (h5p.json and the params), packageFrom (a
                       content-only .h5p File), and the helpers translated, escapeHtml,
                       blankSentence, fileName
-  create.js           the dialog and the Prompt API: createOffer({ onCreated }) returns a function
-                      that opens the dialog, or null where the model is unavailable; loads
-                      authoring.js and the pack's semantics lazily, so they are chunks of their
-                      own; shows the model download's progress, an elapsed-time line while the
-                      model writes, and plain-language errors
+  create.js           the dialog: createOffer({ onCreated }) returns a function that opens it, or
+                      null where the model is unavailable; loads authoring.js and the pack's
+                      semantics lazily, so they are chunks of their own; shows the model
+                      download's progress, an elapsed-time line while the model writes, and
+                      plain-language errors
+  model/nano.js       Chrome's model behind the one interface the app talks to: availability,
+                      a session with a system prompt, prompt(text, { schema }), quota. Nothing
+                      else touches LanguageModel
+  semantics/          content-model.js: params walked with the pack's semantics into nodes, and
+                      editable(); outline.js: the numbered lines the model reads, ids per turn;
+                      dialects.js: text ↔ markup through a markdown subset, and the Blanks dialect
+  edit/               operations.js: set ops applied with the field's checks, refusals by id;
+                      prompt.js: the rules, the turn, the fix round, and EDIT_SCHEMA { ops, reply }
+  package/            read.js: h5p.json and content.json from a file; working-copy.js: the
+                      edited file for the player, the original bytes referenced, not copied
+evals/                the editing spine against the real model, by hand: samples (tasks.js), the
+                      outline, the raw answer, what was applied, the time and the quota, and a
+                      table of runs to judge and copy into the repository (/evals/ in dev)
 scripts/
   authoring-pack.mjs  readAuthoringPack(): the newest of the five libraries in the pack, each with
                       library.json, semantics.json and language/{de,es,fr,ja}.json (137 kB raw),
@@ -131,13 +153,19 @@ That file is GPL and the published runtime has only `dist/`, so it is not used h
 
 ## Left to do
 
-1. **A by-hand run in Chrome 148+ with the real model.** It is not yet established whether
-   `responseConstraint` honours `minItems`/`maxItems`, so the schema leaves counts out and code
-   keeps at most `count` items. Also check the time per activity and the quality.
-2. **Installable and offline.** The app's own Service Worker, which calls `mountH5P(self)` and
+1. **Prove the bet with the real model.** The `evals/` page exists (2026-10-19) and is tested
+   with a stand-in; nobody has run it against Chrome's model yet. Run its ten tasks on its four
+   samples in Chrome 148+ by hand, judge each, and put the copied table in `evals/RESULTS.md`
+   with the date and the Chrome version. Speed, the quota, whether the answer holds to the
+   schema and the ids, and quality in German and Japanese are what to measure. Also run Create
+   once, to settle whether `responseConstraint` honours `minItems`/`maxItems`.
+2. **The rest of the first slice** (ARCHITECTURE.md, decision log): `semantics/classify` and
+   the semantics of all 55 libraries, `insert`/`remove`/`move` for lists with recipes,
+   `history`, the export with the pack's libraries, and the chat in `app/` in place of the
+   eval page's controls.
+3. **Installable and offline.** The app's own Service Worker, which calls `mountH5P(self)` and
    precaches the shell and the pack's parts, as the player repo's `/app/sw.js` does; the element
    then uses it through `sw`. A web app manifest and icons.
-3. **A list of the files made.** Keep the generated `File`s in IndexedDB so they reopen offline.
 4. **Close issue #47** in missing-elements/h5p-offline-player, linking this repository.
 
 Done: the page, Create and Save (2026-10-19), and the browser tests with a stand-in model.

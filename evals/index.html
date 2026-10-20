@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="robots" content="noindex" />
+    <title>Editing evals · H5P from your text</title>
+    <link rel="stylesheet" href="/src/app.css" />
+    <style>
+      .evals { display: grid; grid-template-columns: minmax(360px, 1fr) minmax(360px, 1fr); gap: 16px; max-width: none; }
+      @media (max-width: 800px) { .evals { grid-template-columns: 1fr; } }
+      .evals pre { white-space: pre-wrap; word-break: break-word; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); font-size: 0.85rem; max-height: 320px; overflow: auto; }
+      .evals textarea, .evals select, .evals input[type="text"] { width: 100%; padding: 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--fg); font: inherit; }
+      .evals .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+      .evals h2 { font-size: 1rem; margin: 16px 0 4px; }
+      .evals table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+      .evals th, .evals td { border-bottom: 1px solid var(--line); padding: 4px 6px; text-align: left; vertical-align: top; }
+      .evals .status { min-height: 1.5em; }
+      .evals .status[data-tone="error"] { color: var(--error); }
+      .evals .applied li { margin: 2px 0; }
+      .evals .violation { color: var(--error); }
+    </style>
+    <script type="module" src="/evals/eval.js"></script>
+  </head>
+
+  <body>
+    <header class="bar">
+      <h1>Editing evals</h1>
+      <div class="bar-actions">
+        <span id="environment" class="create-note"></span>
+      </div>
+    </header>
+
+    <main class="evals">
+      <section>
+        <p class="create-note">Chrome's model gets a real outline, a real instruction and the <code>{ ops, reply }</code> schema, on real content. Judge each run and copy the table into the repository.</p>
+        <p class="no-model" id="no-model" hidden>No <code>LanguageModel</code> here: this needs desktop Chrome 148 or later with the built-in model.</p>
+
+        <h2>Content</h2>
+        <div class="row">
+          <select id="sample" aria-label="Sample"></select>
+          <label class="button">Open a file<input type="file" id="file" accept=".h5p,application/zip" hidden /></label>
+          <label><input type="checkbox" id="settings" /> Include settings in the outline</label>
+        </div>
+        <pre id="outline" aria-label="The outline the model reads"></pre>
+
+        <h2>Task</h2>
+        <div class="row">
+          <select id="task" aria-label="Task"></select>
+        </div>
+        <textarea id="message" rows="2" aria-label="The teacher's message"></textarea>
+        <p class="create-note" id="right"></p>
+        <div class="row">
+          <button type="button" class="primary" id="run">Run</button>
+          <button type="button" id="reset">Reset content</button>
+          <span class="status" id="status" role="status" aria-live="polite"></span>
+        </div>
+
+        <h2>Answer</h2>
+        <pre id="answer"></pre>
+        <ul class="applied" id="applied"></ul>
+
+        <h2>Runs</h2>
+        <div class="row">
+          <button type="button" id="copy">Copy as Markdown</button>
+          <button type="button" id="clear">Clear</button>
+        </div>
+        <table id="runs">
+          <thead>
+            <tr><th>Sample</th><th>Task</th><th>Time</th><th>Quota</th><th>Changed</th><th>Refused</th><th>Verdict</th><th>Notes</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
+      <section>
+        <h5p-player libraries="pack" untrusted></h5p-player>
+      </section>
+    </main>
+  </body>
+</html>
