@@ -1,8 +1,13 @@
 /**
  * The eval page: the editing spine driven by hand against the real model, with every step shown
- * — the outline the model reads, its raw answer, what was applied or refused, the time and the
- * quota — and a table of runs to judge and copy into the repository. The same modules the app
- * will use; nothing here is a stand-in but the person judging.
+ * — the system prompt, the outline the model reads, its raw answer, what was applied or refused,
+ * the time and the quota — and a table of runs to judge and copy into the repository. The same
+ * modules the app will use; nothing here is a stand-in but the person judging.
+ *
+ * A text that breaks its field's format (HTML where the field is plain text, a tag the field
+ * does not allow) is refused and counted in its own column, before the second try: whether the
+ * model keeps to the formats it is told is one of the things measured, so nothing is cleaned
+ * up behind it.
  */
 
 import '@missing-elements/h5p-offline-player'
@@ -10,8 +15,8 @@ import { pack } from '@missing-elements/h5p-libraries'
 import { runtime } from '@missing-elements/h5p-runtime'
 import authoringPack from 'virtual:h5p-authoring-pack'
 import { contentFrom, packageFrom } from '../src/authoring.js'
-import { applyOps } from '../src/edit/operations.js'
-import { EDIT_SCHEMA, editPrompt, editSystem, fixPrompt } from '../src/edit/prompt.js'
+import { applyChanges } from '../src/edit/operations.js'
+import { LOOSE_EDIT_SCHEMA, editPrompt, editSchema, editSystem, fixPrompt } from '../src/edit/prompt.js'
 import { nano } from '../src/model/nano.js'
 import { readPackage } from '../src/package/read.js'
 import { withContent } from '../src/package/working-copy.js'
@@ -32,6 +37,7 @@ let current = null
 let byId = new Map()
 /** The runs so far, for the table. */
 const runs = []
+const COLUMNS = ['sample', 'task', 'time', 'quota', 'changed', 'refused', 'format', 'schema']
 
 for (const [key, sample] of Object.entries(SAMPLES)) $('#sample').append(new Option(sample.label, key))
 for (const [index, task] of TASKS.entries()) $('#task').append(new Option(task.label, String(index)))
@@ -45,7 +51,8 @@ async function loadSample(key) {
   const sample = SAMPLES[key]
   const content = contentFrom(sample.kind, sample.answer, { pack: authoringPack, language: sample.language })
   const file = await packageFrom(content)
-  setCurrent({ file, manifest: content.manifest, params: content.params, mainLibrary: content.manifest.preloadedDependencies[0] && `${content.manifest.mainLibrary} ${content.manifest.preloadedDependencies[0].majorVersion}.${content.manifest.preloadedDependencies[0].minorVersion}`, language: sample.language, name: key })
+  const main = content.manifest.preloadedDependencies[0]
+  setCurrent({ file, manifest: content.manifest, params: content.params, mainLibrary: `${main.machineName} ${main.majorVersion}.${main.minorVersion}`, language: sample.language, name: key })
 }
 
 async function openFile(file) {
@@ -68,6 +75,7 @@ function setCurrent(next) {
 }
 
 function render() {
+  $('#system').textContent = editSystem(current?.language ?? 'en')
   if (!current) {
     $('#outline').textContent = ''
     byId = new Map()
@@ -87,6 +95,16 @@ function showTask() {
   render()
 }
 
+/** Asks with this turn's schema; where the browser's model refuses it, with the loose one, and says which. */
+async function ask(session, text) {
+  try {
+    return { answer: await session.prompt(text, { schema: editSchema(byId), omitSchema: true }), schema: 'strict' }
+  } catch (error) {
+    if (error?.name !== 'NotSupportedError' && error?.name !== 'TypeError' && error?.name !== 'SyntaxError') throw error
+    return { answer: await session.prompt(text, { schema: LOOSE_EDIT_SCHEMA, omitSchema: true }), schema: `loose (${error.name}: ${error.message})` }
+  }
+}
+
 async function run() {
   if (!current) return say('Load a sample or open an editable file first.', 'error')
   const message = $('#message').value.trim()
@@ -96,49 +114,44 @@ async function run() {
   $('#run').disabled = true
   $('#answer').textContent = ''
   $('#applied').replaceChildren()
-  const system = editSystem(current.language)
   const started = performance.now()
   let session
   try {
     say('Starting the model…')
-    session = await nano.session({ system, language: current.language, onDownload: (loaded) => say(`Downloading Chrome's model: ${Math.round(loaded * 100)}%`) })
-    const before = await session.quota()
-    const prompt = editPrompt($('#outline').textContent, message)
+    session = await nano.session({ system: editSystem(current.language), language: current.language, onDownload: (loaded) => say(`Downloading Chrome's model: ${Math.round(loaded * 100)}%`) })
     say('Writing…')
-    const firstAnswer = await session.prompt(prompt, { schema: EDIT_SCHEMA })
-    const firstMs = Math.round(performance.now() - started)
-    let parsed = parse(firstAnswer)
-    let result = parsed ? applyOps(current.params, parsed.ops, byId) : null
-    let fixed = false
-    let secondAnswer = null
+    const first = await ask(session, editPrompt($('#outline').textContent, message))
+    const parsed = parse(first.answer)
+    let result = parsed ? applyChanges(current.params, parsed.changes, byId) : null
+    const formatBreaks = result ? result.violations.filter((violation) => violation.kind === 'format').length : 0
+    let second = null
     if (result && result.violations.length) {
       say('Asking once more about the refused fields…')
-      secondAnswer = await session.prompt(fixPrompt(result.violations), { schema: EDIT_SCHEMA })
-      const again = parse(secondAnswer)
+      second = await ask(session, fixPrompt(result.violations))
+      const again = parse(second.answer)
       if (again) {
-        const second = applyOps(result.params, again.ops, byId)
-        result = { params: second.params, applied: [...result.applied, ...second.applied], violations: second.violations }
-        fixed = true
+        const retried = applyChanges(result.params, again.changes, byId)
+        result = { params: retried.params, applied: [...result.applied, ...retried.applied], violations: retried.violations }
       }
     }
     const ms = Math.round(performance.now() - started)
-    const after = await session.quota()
+    const quota = session.quota()
 
-    $('#answer').textContent = secondAnswer ? `${firstAnswer}\n\n— after the refusals —\n${secondAnswer}` : firstAnswer
+    $('#answer').textContent = second ? `${first.answer}\n\n— after the refusals —\n${second.answer}` : first.answer
     if (!parsed) {
-      say(`The answer was not JSON (${firstMs} ms).`, 'error')
-      runs.push(row({ ms, quota: after, changed: 0, refused: 'not JSON', fixed }))
+      say(`The answer was not the JSON asked for (${ms} ms).`, 'error')
+      runs.push(row({ ms, quota, changed: 0, refused: 'not JSON', formatBreaks: 0, schema: first.schema, tries: 1 }))
     } else {
       for (const change of result.applied) $('#applied').append(item(`${change.id} ${change.label}: ${String(change.from)} → ${String(change.to)}`))
-      for (const refusal of result.violations) $('#applied').append(item(`${refusal.id}: ${refusal.problem}`, 'violation'))
+      for (const refusal of result.violations) $('#applied').append(item(`${refusal.id} ${refusal.label}: ${refusal.problem}`, 'violation'))
       if (result.applied.length) {
         const file = await withContent(current.file, { params: result.params })
         current = { ...current, file, params: result.params }
         player.file = file
         render()
       }
-      say(`${result.applied.length} field(s) changed, ${result.violations.length} refused, ${ms} ms${fixed ? ', with a second try' : ''}. "${parsed.reply ?? ''}"`)
-      runs.push(row({ ms, quota: after ?? before, changed: result.applied.length, refused: result.violations.length, fixed }))
+      say(`${result.applied.length} field(s) changed, ${result.violations.length} refused, ${formatBreaks} format break(s) on the first try, ${ms} ms. "${parsed.reply ?? ''}"`)
+      runs.push(row({ ms, quota, changed: result.applied.length, refused: result.violations.length, formatBreaks, schema: first.schema, tries: second ? 2 : 1 }))
     }
     renderRuns()
   } catch (error) {
@@ -152,20 +165,22 @@ async function run() {
 function parse(answer) {
   try {
     const value = JSON.parse(answer)
-    return value && typeof value === 'object' && Array.isArray(value.ops) ? value : null
+    return value && typeof value === 'object' && value.changes && typeof value.changes === 'object' ? value : null
   } catch {
     return null
   }
 }
 
-function row({ ms, quota, changed, refused, fixed }) {
+function row({ ms, quota, changed, refused, formatBreaks, schema, tries }) {
   return {
     sample: current.name,
     task: $('#message').value.trim(),
-    time: `${(ms / 1000).toFixed(1)} s${fixed ? ' (2 tries)' : ''}`,
+    time: `${(ms / 1000).toFixed(1)} s${tries > 1 ? ' (2 tries)' : ''}`,
     quota: quota ? `${quota.used}/${quota.total}` : '?',
     changed: String(changed),
     refused: String(refused),
+    format: String(formatBreaks),
+    schema,
     verdict: '',
     notes: ''
   }
@@ -176,7 +191,7 @@ function renderRuns() {
   body.replaceChildren(
     ...runs.map((entry) => {
       const tr = document.createElement('tr')
-      for (const key of ['sample', 'task', 'time', 'quota', 'changed', 'refused']) {
+      for (const key of COLUMNS) {
         const td = document.createElement('td')
         td.textContent = entry[key]
         tr.append(td)
@@ -221,8 +236,9 @@ $('#clear').addEventListener('click', () => {
   renderRuns()
 })
 $('#copy').addEventListener('click', async () => {
-  const header = `| Sample | Task | Time | Quota | Changed | Refused | Verdict | Notes |\n| --- | --- | --- | --- | --- | --- | --- | --- |`
-  const lines = runs.map((entry) => `| ${['sample', 'task', 'time', 'quota', 'changed', 'refused', 'verdict', 'notes'].map((key) => String(entry[key]).replace(/\|/g, '\\|')).join(' | ')} |`)
+  const keys = [...COLUMNS, 'verdict', 'notes']
+  const header = `| ${keys.map((key) => key[0].toUpperCase() + key.slice(1)).join(' | ')} |\n| ${keys.map(() => '---').join(' | ')} |`
+  const lines = runs.map((entry) => `| ${keys.map((key) => String(entry[key]).replace(/\|/g, '\\|')).join(' | ')} |`)
   await navigator.clipboard.writeText(`${$('#environment').textContent}\n\n${header}\n${lines.join('\n')}\n`)
   say('Copied.')
 })

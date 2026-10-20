@@ -14,7 +14,7 @@
 
 import { ContentGenerator } from '../../scripts/sweep-content.mjs'
 import { packFor } from '../authoring.js'
-import { dialectFor, toText } from './dialects.js'
+import { dialectFor, formatOf, toModel } from './dialects.js'
 
 /**
  * @typedef {object} Node
@@ -28,6 +28,7 @@ import { dialectFor, toText } from './dialects.js'
  * @property {string} [text] a text node's value as the model reads it
  * @property {boolean} [html] whether the field holds markup (it has `tags`)
  * @property {string} [dialect] how the text is read and written
+ * @property {import('./dialects.js').Format} [format] a text node's format: where the model may write HTML
  * @property {boolean} [content] whether the node is the author's content rather than a setting
  * @property {(string | number)[]} [titleOf] for a sub-content's question: the sub-content whose title follows it
  */
@@ -131,12 +132,14 @@ class Walk {
     const node = { kind: field.type, path, label: field.label ?? field.name, depth: ctx.depth, library: ctx.library, field, value, html, dialect, content: false }
     if (field.type === 'text') {
       if (typeof value !== 'string' || !value.trim()) return
-      const text = toText(value, { tags: html, dialect })
-      const brought = field.default === undefined ? null : toText(field.default, { tags: html, dialect })
+      const format = formatOf(field, dialect)
+      const text = toModel(value, format)
+      const brought = field.default === undefined ? null : toModel(field.default, format)
       // The library's own words, untouched, are not the author's: a button label, a heading.
       if (!text || text === brought) return
       node.content = true
       node.text = text
+      node.format = format
       // A question is its sub-content's title in a set, as the editor writes it.
       if (ctx.sub && field.name === 'question' && path.length === ctx.sub.length + 2) node.titleOf = ctx.sub
     } else {

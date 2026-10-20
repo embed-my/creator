@@ -82,20 +82,30 @@ the semantics, so the model learns what a field means from H5P's own words. `out
 focus)` renders the part a turn is about as short numbered lines:
 
 ```text
-t1 Title: The water cycle
-q1 Question 1
-t2   Question: What drives evaporation?
-t3   Answer (correct): The sun
-t4   Feedback: Its heat turns water into vapour.
-s1   Randomize answers [yes/no]: yes
+t1 Title [html: strong em sub sup code]: The water cycle
+Question 1 (True/False Question)
+t2   Question [html: strong em sub sup code]: Rain falls upwards.
+s1   Correct answer [true/false]: false
+t3   Feedback on correct answer [text]: Gravity pulls it down.
 ```
 
-The ids are aliases for this turn only; code keeps the map to paths. Text in a field with `tags`
-is shown as text with a small markdown subset (bold, italics, lists, line breaks) and written
-back through that subset into the field's allowed tags, so the model never emits HTML. A field
-whose text carries meaning — `*blank*` in Fill in the Blanks, Drag Text and Mark the Words — has
-a **dialect** that renders it to the outline and parses it back, registered per library and
-field.
+The ids are aliases for this turn only; code keeps the map to paths.
+
+**Where HTML goes is told, not filtered.** Each text field's format comes from its own
+semantics: a field without `tags` is `[text]`, plain text; a field with `tags` is `[html: …]`,
+listing the inline tags among them the model may write (strong, em, u, del, sub, sup, code),
+without attributes. Paragraphs, line breaks, headings and links are never the model's: code
+wraps paragraphs as the field's previous value did. The format is stated three times, each in
+its own way: the system prompt defines the formats once; every outline line names its field's
+format; text that breaks it is refused with the rule restated (`checkModelText`) and goes to the
+fix round. Nothing that breaks a format is cleaned up and applied, so the evals measure whether
+the explanation works. (Create, which has no second turn, is the one place markup is stripped,
+as a guard.) Added on 2026-10-20 after the first run of the real model wrote `<h1>` round a
+title: the first version told the model "plain text" once, globally, never per field.
+
+A field whose text carries meaning — `*blank*` in Fill in the Blanks, Drag Text and Mark the
+Words — has a **dialect** on top of its format, registered per library and field. Asterisks are
+not used by any format, so a blank never collides with bold.
 
 ### edit
 
@@ -111,8 +121,13 @@ API's quota call says better.
 **Operations.** `set(id, value)` for text, number, boolean and select, checked against the
 field's constraints (length, range, options, allowed tags). `insert(listId, index, item)`,
 `remove(id)` and `move(id, index)` for lists whose item kind has a recipe, so a new question is
-written in the recipe's shape and assembled by code with every default. The answer schema is
-`{ reply, ops }`, held by `responseConstraint`; `reply` is the one sentence the chat shows.
+written in the recipe's shape and assembled by code with every default. The answer is
+`{ changes: { <id>: <value> }, reply }`, held by `responseConstraint` to a schema made per turn:
+the outline's ids are the only keys of `changes` and each value has its field's kind (a
+boolean, a number in range, one of a select's options, a string), so a wrong id or a "maybe"
+cannot be written. The schema is not sent to the model as text (`omitResponseConstraintInput`):
+the system prompt describes the answer in words, and the window is small. `reply` is the one
+sentence the chat shows.
 
 **Checks and the loop.** `check(params, semantics)` is the app's own: types, required fields,
 ranges, options, list lengths, allowed tags, libraries the pack has. A violation goes back to the
@@ -138,15 +153,16 @@ interface ModelProvider {
   session({ system, language, signal, onDownload }): Promise<ModelSession>
 }
 interface ModelSession {
-  prompt(text, { schema, signal }): Promise<string>
-  quota(): Promise<{ used: number; total: number } | null>
+  prompt(text, { schema, omitSchema, signal }): Promise<string>
+  quota(): { used: number; total: number } | null
   destroy(): void
 }
 ```
 
 One implementation, `nano`, over `LanguageModel`: `availability` and `create` with the language
-options Create uses today, `responseConstraint` for the schema, `inputQuota` and `inputUsage`
-for the quota. The interface is as small as the base needs, and it is the seam for other models.
+options Create uses today, `responseConstraint` for the schema (and
+`omitResponseConstraintInput` when the prompt already describes it), `contextUsage` and
+`contextWindow` for the quota (`inputUsage` and `inputQuota` before Chrome renamed them). The interface is as small as the base needs, and it is the seam for other models.
 Nothing else in the app touches `LanguageModel`.
 
 ### history
@@ -175,8 +191,9 @@ all in the pack and all text types? → `contentModel` → the file and its vers
 the player plays the file untrusted. Otherwise the file plays as it is and the chat says why it
 cannot be edited.
 
-**Edit.** Message → focus → outline → prompt (system: the rules; user: the outline, the message,
-the dialects in play) → `{ reply, ops }` → `check` → on a violation, one fix round → operations
+**Edit.** Message → focus → outline → prompt (system: the rules and the formats; user: the
+outline, each line with its format, and the message) → `{ changes, reply }` → `check` → on a
+violation, one fix round with the rule restated → operations
 applied to a copy of the params → `withContent` → `player.file = copy` → the version and the
 reply saved → the chat shows the reply.
 
@@ -188,10 +205,12 @@ after the title.
 
 ## What the model is told
 
-The system prompt states the rules in a few lines: edit only the fields listed, only as asked,
-keep the language of the content unless asked to change it, write plain text, say in one
-sentence what was done. Each turn's user message is the outline, the dialects it uses, and the
-teacher's words. The chat history is not sent: the content's current state is the history, and
+The system prompt states the rules in a few lines: what each format allows (where HTML may go,
+which tags, where it may not, and the blank's asterisks), edit only the fields listed and only
+as asked, keep the language of the content unless asked to change it, the quotation marks a
+teacher puts round a phrase are not part of it, and the shape of the answer with one sentence
+saying what was done. Each turn's user message is the outline, every line naming its field's
+format, and the teacher's words. The chat history is not sent: the content's current state is the history, and
 the window is small. Create keeps its own prompt, as written today.
 
 ## Testing

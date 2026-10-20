@@ -8,8 +8,11 @@
  * - `session({ system, language, signal, onDownload })`: a session with the rules as its system
  *   prompt. The first session downloads the model, from the click that asked, and reports its
  *   progress as a fraction.
- * - `session.prompt(text, { schema, signal })`: the answer, held to the JSON schema.
- * - `session.quota()`: tokens used and allowed, where the API says.
+ * - `session.prompt(text, { schema, omitSchema, signal })`: the answer, held to the JSON schema.
+ *   The API sends the schema to the model as part of the prompt unless `omitSchema` says the
+ *   prompt already describes the answer.
+ * - `session.quota()`: tokens used and the window's size. The API calls them `contextUsage` and
+ *   `contextWindow`; Chrome before the rename called them `inputUsage` and `inputQuota`.
  */
 
 /**
@@ -46,9 +49,13 @@ export const nano = {
       }
     })
     return {
-      prompt: (text, { schema, signal: own } = {}) => session.prompt(text, { ...(schema ? { responseConstraint: schema } : {}), signal: own ?? signal }),
-      quota: () => (typeof session.inputQuota === 'number' ? { used: session.inputUsage ?? 0, total: session.inputQuota } : null),
-      measure: (text) => (typeof session.measureInputUsage === 'function' ? session.measureInputUsage(text) : Promise.resolve(null)),
+      prompt: (text, { schema, omitSchema = false, signal: own } = {}) =>
+        session.prompt(text, { ...(schema ? { responseConstraint: schema, ...(omitSchema ? { omitResponseConstraintInput: true } : {}) } : {}), signal: own ?? signal }),
+      quota: () => {
+        const total = session.contextWindow ?? session.inputQuota
+        const used = session.contextUsage ?? session.inputUsage
+        return typeof total === 'number' ? { used: typeof used === 'number' ? used : 0, total } : null
+      },
       destroy: () => session.destroy()
     }
   }

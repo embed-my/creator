@@ -1,83 +1,89 @@
 /**
- * The model's edits applied to the content: `set` operations, each naming a field by its
- * outline id and giving its complete new value as text. Code reads the text as the field's
- * kind — markup through the field's dialect, yes/no, a number in range, one of the choices —
- * and refuses what the field refuses, with the reason, so the model can be asked once more.
+ * The model's edits applied to the content: `changes`, an object from outline ids to complete
+ * new values. Code reads each value as its field's kind — text in the field's format (where it
+ * may hold HTML, and which tags), true or false, a number in range, one of the choices — and
+ * refuses what the field refuses, with the rule restated, so the model can be asked once more.
+ * Nothing that breaks a format is cleaned and applied: it is refused, and the refusal says why.
  * The parameters are not changed; a copy comes back with the applied edits.
  */
 
-import { escapeHtml } from '../authoring.js'
-import { toHtml } from '../semantics/dialects.js'
+import { checkModelText, escapeHtml, stripMarkup, toHtml } from '../semantics/dialects.js'
+import { formatHint } from '../semantics/outline.js'
 
-const YES = new Set(['yes', 'true', 'on', '1'])
-const NO = new Set(['no', 'false', 'off', '0'])
+/**
+ * @typedef {{ id: string, label: string, kind: 'id' | 'format' | 'value', problem: string }} Violation
+ *   `format`: text that broke its field's format (where HTML may go); `value`: a value outside
+ *   what the field takes; `id`: no such field
+ */
 
 /**
  * @param {any} params
- * @param {{ id: string, value: string }[]} ops
+ * @param {Record<string, unknown> | null | undefined} changes
  * @param {Map<string, import('../semantics/content-model.js').Node>} byId the outline's ids
- * @returns {{ params: any, applied: { id: string, label: string, from: any, to: any }[], violations: { id: string, problem: string }[] }}
+ * @returns {{ params: any, applied: { id: string, label: string, from: any, to: any }[], violations: Violation[] }}
  */
-export function applyOps(params, ops, byId) {
+export function applyChanges(params, changes, byId) {
   const next = structuredClone(params)
   const applied = []
+  /** @type {Violation[]} */
   const violations = []
-  for (const op of Array.isArray(ops) ? ops : []) {
-    const id = String(op?.id ?? '')
+  const entries = changes && typeof changes === 'object' && !Array.isArray(changes) ? Object.entries(changes) : []
+  for (const [id, given] of entries) {
     const node = byId.get(id)
     if (!node) {
-      violations.push({ id, problem: 'There is no field with this id.' })
+      violations.push({ id, label: '', kind: 'id', problem: 'There is no field with this id.' })
       continue
     }
-    const given = typeof op.value === 'string' ? op.value : String(op.value ?? '')
     const read = parse(node, given)
     if ('problem' in read) {
-      violations.push({ id, problem: read.problem })
+      violations.push({ id, label: `${node.label} [${formatHint(node)}]`, kind: read.kind, problem: read.problem })
       continue
     }
     if (read.value === node.value) continue
     setAt(next, node.path, read.value)
     if (node.titleOf) {
       const sub = getAt(next, node.titleOf)
-      if (sub?.metadata) sub.metadata.title = escapeHtml(given.length > 60 ? `${given.slice(0, 59)}…` : given)
+      // The title the editor writes is the question as one line of text, without its tags.
+      const title = stripMarkup(read.value).replace(/\s+/g, ' ')
+      if (sub?.metadata) sub.metadata.title = escapeHtml(title.length > 60 ? `${title.slice(0, 59)}…` : title)
     }
     applied.push({ id, label: node.label, from: node.value, to: read.value })
   }
   return { params: next, applied, violations }
 }
 
-/** @returns {{ value: any } | { problem: string }} */
-function parse(node, text) {
+/** @returns {{ value: any } | { problem: string, kind: 'format' | 'value' }} */
+function parse(node, given) {
   const { field } = node
-  const trimmed = text.trim()
   switch (node.kind) {
     case 'text': {
-      if (!trimmed) return { problem: 'The text is empty.' }
-      if (field.maxLength && trimmed.length > field.maxLength) return { problem: `At most ${field.maxLength} characters.` }
-      if (node.dialect === 'blanks' && !/\*[^*]+\*/.test(trimmed)) return { problem: 'The answer must stay between asterisks, like *this*.' }
-      return { value: node.html ? toHtml(trimmed, { tags: field.tags, dialect: node.dialect, previous: node.value }) : toHtml(trimmed) }
+      const checked = checkModelText(given, node.format)
+      if ('problem' in checked) return { problem: checked.problem, kind: 'format' }
+      if (field.maxLength && checked.text.length > field.maxLength) return { problem: `At most ${field.maxLength} characters.`, kind: 'value' }
+      return { value: toHtml(checked.text, node.format, node.value) }
     }
     case 'boolean': {
-      const word = trimmed.toLowerCase()
-      if (YES.has(word)) return { value: true }
-      if (NO.has(word)) return { value: false }
-      return { problem: 'Answer yes or no.' }
+      if (typeof given === 'boolean') return { value: given }
+      const word = String(given ?? '').trim().toLowerCase()
+      if (word === 'true' || word === 'yes') return { value: true }
+      if (word === 'false' || word === 'no') return { value: false }
+      return { problem: 'Answer true or false.', kind: 'value' }
     }
     case 'number': {
-      const number = Number(trimmed)
-      if (!trimmed || !Number.isFinite(number)) return { problem: 'Not a number.' }
-      if (field.min !== undefined && number < field.min) return { problem: `At least ${field.min}.` }
-      if (field.max !== undefined && number > field.max) return { problem: `At most ${field.max}.` }
-      if (!field.decimals && !Number.isInteger(number)) return { problem: 'A whole number.' }
+      const number = typeof given === 'number' ? given : Number(String(given ?? '').trim())
+      if (!Number.isFinite(number) || String(given ?? '').trim() === '') return { problem: 'Not a number.', kind: 'value' }
+      if (field.min !== undefined && number < field.min) return { problem: `At least ${field.min}.`, kind: 'value' }
+      if (field.max !== undefined && number > field.max) return { problem: `At most ${field.max}.`, kind: 'value' }
+      if (!field.decimals && !Number.isInteger(number)) return { problem: 'A whole number.', kind: 'value' }
       return { value: number }
     }
     case 'select': {
-      const word = trimmed.toLowerCase()
-      const option = (field.options ?? []).find((each) => String(each.value).toLowerCase() === word || String(each.label ?? '').toLowerCase() === word)
-      return option ? { value: option.value } : { problem: `One of: ${(field.options ?? []).map((each) => each.value).join(', ')}.` }
+      const word = String(given ?? '').trim().toLowerCase()
+      const option = (field.options ?? []).find((each) => String(each.value).toLowerCase() === word)
+      return option ? { value: option.value } : { problem: `One of: ${(field.options ?? []).map((each) => each.value).join(', ')}.`, kind: 'value' }
     }
     default:
-      return { problem: 'This field cannot be changed.' }
+      return { problem: 'This field cannot be changed.', kind: 'value' }
   }
 }
 

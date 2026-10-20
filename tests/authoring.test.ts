@@ -137,10 +137,12 @@ describe("Create's content", () => {
     for (const id of ids) expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
   })
 
-  it('escapes what the model wrote, and keeps what it means', () => {
+  it('drops the markup the model wrote, and escapes the rest', () => {
     const content = contentFrom('quiz', ANSWERS.quiz, { pack })
     const [, second] = content.params.questions
-    expect(second.params.question).toBe('<p>What is rain called &lt;b&gt;in science&lt;/b&gt;?</p>')
+    // The <b> the model wrote is noise, not content; an ampersand it writes is text, escaped.
+    expect(second.params.question).toBe('<p>What is rain called in science?</p>')
+    expect(content.params.questions[0].params.answers[1].text).toBe('<div>The moon</div>')
     expect(second.params.answers[0]).toMatchObject({ text: '<div>Precipitation</div>', correct: true })
     expect(content.params.questions[0].params.answers[1].tipsAndFeedback.chosenFeedback).toBe('<div>The moon moves tides, not vapour.</div>')
     expect(content.params.introPage).toMatchObject({ showIntroPage: true, title: 'The water cycle' })

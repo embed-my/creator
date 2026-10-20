@@ -19,6 +19,9 @@
 
 import { BlobWriter, TextReader, ZipWriter, configure } from '@zip.js/zip.js'
 import { ContentGenerator, libraryString } from '../scripts/sweep-content.mjs'
+import { escapeHtml, stripMarkup } from './semantics/dialects.js'
+
+export { escapeHtml }
 
 /** The languages the Prompt API writes, by tag, as the instructions to the model name them. */
 export const LANGUAGES = { en: 'English', de: 'German', es: 'Spanish', fr: 'French', ja: 'Japanese' }
@@ -158,7 +161,7 @@ export function schemaFor(kind) {
 /** What the model is told, once per session, and asked, once per activity. */
 export function promptFor(kind, { text: source, count, language }) {
   return {
-    system: `You make learning activities from a teacher's text. Use only what the text says, and never add facts of your own. Write everything in ${LANGUAGES[language] ?? 'English'}, short and clear.`,
+    system: `You make learning activities from a teacher's text. Use only what the text says, and never add facts of your own. Write everything in ${LANGUAGES[language] ?? 'English'}, short and clear. Every value you write is plain text: no HTML tags, no markdown, no headings, no quotation marks round it. The app lays out the activity itself.`,
     prompt: `${KINDS[kind].task(count)} Also give the activity a short title.\n\nThe text:\n"""\n${source.slice(0, MAX_TEXT_LENGTH)}\n"""`,
     schema: schemaFor(kind)
   }
@@ -228,19 +231,6 @@ export function translated(base, translation) {
   return typeof translation === typeof base ? translation : base
 }
 
-const REFERENCES = { '&': '&amp;', '"': '&quot;', "'": '&#039;', '<': '&lt;', '>': '&gt;' }
-
-/**
- * Text as an H5P field holds it: PHP's `htmlspecialchars(…, ENT_QUOTES)`, the escaping H5P's
- * validator applies, `'` as `&#039;`. With `keepReferences`, a reference already in the text is
- * kept, as the validator keeps one (its `double_encode` is off): for the content type's defaults,
- * where `&nbsp;` means a space. The model's words are text through and through.
- */
-export function escapeHtml(value, { keepReferences = false } = {}) {
-  const special = keepReferences ? /[&](?!#[0-9]+;|#[xX][0-9a-fA-F]+;|[a-zA-Z0-9]+;)|["'<>]/g : /[&"'<>]/g
-  return value.replace(special, (char) => REFERENCES[char])
-}
-
 /**
  * Fill in the Blanks' markup for a sentence with one blank: the answer between asterisks. The
  * answer has to be in the sentence, as written or in another case, and it loses what the content
@@ -299,9 +289,12 @@ function subMetadata(contentType, title) {
   return { contentType, license: 'U', title: escapeHtml(title.length > 60 ? `${title.slice(0, 59)}…` : title) }
 }
 
-/** A string the model wrote, as one line of text, or `''`. */
+/**
+ * A string the model wrote, as one line of text, or `''`. The model is told to write plain text;
+ * markup it writes anyway is dropped here, since Create has no second turn to ask again in.
+ */
 function text(value, max = MAX_ITEM) {
-  return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, max).trim() : ''
+  return typeof value === 'string' ? stripMarkup(value).replace(/\s+/g, ' ').trim().slice(0, max).trim() : ''
 }
 
 function isObject(value) {

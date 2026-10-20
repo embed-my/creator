@@ -41,11 +41,18 @@ It is built on the published packages, installed from npm like any other site th
   - `create({ expectedInputs, expectedOutputs, initialPrompts, signal, monitor })` downloads the
     model the first time and needs a user click. It fires `downloadprogress` events whose
     `loaded` runs from 0 to 1.
-  - `session.prompt(text, { responseConstraint: jsonSchema, signal })`.
+  - `session.prompt(text, { responseConstraint: jsonSchema, signal })`. The schema is sent to
+    the model as part of the prompt unless `omitResponseConstraintInput: true` (checked
+    2026-10-20); the docs then advise describing the answer in the prompt. Which JSON Schema
+    keywords are honoured is not documented: the docs' examples use `type`, `properties`,
+    `required`, `items`, `maxItems`, `pattern` and `additionalProperties: false`.
+  - `session.contextUsage` / `session.contextWindow` and `measureContextUsage()`: renamed from
+    `inputUsage` / `inputQuota` / `measureInputUsage()`; `model/nano.js` reads both.
 - **Limits:**
   - Not available in Web Workers.
   - A cross-origin iframe needs `allow="language-model"`.
-  - No context-window size is documented, and an overflow throws `QuotaExceededError`.
+  - No context-window size is documented; an overflow fires `contextoverflow` and drops the
+    oldest turns, but never the system prompt.
 - **Sources:** <https://developer.chrome.com/docs/ai/prompt-api> and
   <https://developer.chrome.com/release-notes/148>
 
@@ -88,9 +95,12 @@ src/
                       else touches LanguageModel
   semantics/          content-model.js: params walked with the pack's semantics into nodes, and
                       editable(); outline.js: the numbered lines the model reads, ids per turn;
-                      dialects.js: text ↔ markup through a markdown subset, and the Blanks dialect
-  edit/               operations.js: set ops applied with the field's checks, refusals by id;
-                      prompt.js: the rules, the turn, the fix round, and EDIT_SCHEMA { ops, reply }
+                      dialects.js: each field's format from its semantics' tags — [text] or
+                      [html: the inline tags it allows] — and the check that refuses text
+                      breaking it, with the rule; the Blanks dialect
+  edit/               operations.js: { changes } applied with each field's checks, refusals by
+                      id and kind (id, format, value); prompt.js: the system prompt defining
+                      the formats, the turn, the fix round, and the per-turn schema
   package/            read.js: h5p.json and content.json from a file; working-copy.js: the
                       edited file for the player, the original bytes referenced, not copied
 evals/                the editing spine against the real model, by hand: samples (tasks.js), the
