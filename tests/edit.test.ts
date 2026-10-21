@@ -270,3 +270,53 @@ describe('the working copy and the package', () => {
     expect(report.warnings).toEqual([])
   })
 })
+
+describe('empty slots', () => {
+  const FEEDBACK = (question: number, answer: number, field = 'chosenFeedback') => `questions.${question}.params.answers.${answer}.tipsAndFeedback.${field}`
+
+  it("are an answer's feedback and tip not written yet, in the outline only when a turn asks for them", () => {
+    const content = quiz()
+    expect(outlineOf(content).text).not.toContain('""')
+    const { text, byId } = outlineOf(content, { empty: true })
+    const slot = [...byId.values()].find((node) => node.path.join('.') === FEEDBACK(1, 0))
+    expect(slot).toMatchObject({ empty: true, text: '', label: 'Message displayed if answer is selected' })
+    expect(text).toMatch(/Message displayed if answer is selected \[html: strong em sub sup code\]: ""/)
+    expect(text).toMatch(/Tip text \[html: strong em code\]: ""/)
+    // A filled field is no slot, and a flashcard's image alt text, with no image, is none either.
+    expect([...byId.values()].find((node) => node.path.join('.') === FEEDBACK(0, 0))?.empty).toBeUndefined()
+    const cards = contentFrom('cards', { title: 'Terms', cards: [{ front: 'Evaporation', back: 'Water turning into vapour.' }] }, { pack })
+    expect(outlineOf(cards, { empty: true }).text).not.toMatch(/alt/i)
+  })
+
+  it('are written as the editor writes them, the groups on the way made where missing, and left alone when left empty', () => {
+    const content = quiz()
+    delete content.params.questions[1].params.answers[1].tipsAndFeedback
+    const { byId } = outlineOf(content, { empty: true })
+    const id = (path: string) => [...byId].find(([, node]) => node.path.join('.') === path)![0]
+    const { params, applied, violations } = applyChanges(
+      content.params,
+      { [id(FEEDBACK(1, 0))]: 'Rain, snow and hail are all precipitation.', [id(FEEDBACK(1, 1, 'notChosenFeedback'))]: 'Right: clouds form by condensation.', [id(FEEDBACK(1, 0, 'tip'))]: '' },
+      byId
+    )
+    expect(violations).toEqual([])
+    expect(applied.map((change) => change.from)).toEqual(['', ''])
+    expect(params.questions[1].params.answers[0].tipsAndFeedback.chosenFeedback).toBe('<div>Rain, snow and hail are all precipitation.</div>')
+    expect(params.questions[1].params.answers[1].tipsAndFeedback).toEqual({ notChosenFeedback: '<div>Right: clouds form by condensation.</div>' })
+    expect(params.questions[1].params.answers[0].tipsAndFeedback.tip).toBeUndefined()
+  })
+
+  it('filled, play untrusted with the content check changing nothing', async () => {
+    const content = quiz()
+    const original = await packageFrom(content)
+    const { byId } = outlineOf(content, { empty: true })
+    const slots = [...byId].filter(([, node]) => node.empty && node.path.at(-1) !== 'tip')
+    const { params, violations } = applyChanges(content.params, Object.fromEntries(slots.map(([id], index) => [id, `Feedback ${index + 1}, with <em>emphasis</em>.`])), byId)
+    expect(violations).toEqual([])
+    const file = join(dir, 'slots.h5p')
+    await writeFile(file, new Uint8Array(await (await withContent(original, { params })).arrayBuffer()))
+    const report = await verifyPackage({ file, untrusted: true, libraries: PARTS_DIR, settle: 1_000 })
+    expect(report.verdict, summarize(report)).toBe('pass')
+    expect(report.contentCheck?.changes).toEqual([])
+    expect(report.warnings).toEqual([])
+  })
+})

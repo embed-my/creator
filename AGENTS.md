@@ -11,7 +11,8 @@ plays at once. A model on the teacher's own computer — served by LM Studio, Ol
 or llama.cpp — writes the words; code writes the structure; there are no forms. The text and what
 the model writes never leave the computer.
 
-[ARCHITECTURE.md](ARCHITECTURE.md) is the design: the modules, the flows, the rules every module
+[USE-CASES.md](USE-CASES.md) is what teachers want from AI, ranked, and the first test set drawn
+from it. [ARCHITECTURE.md](ARCHITECTURE.md) is the design: the modules, the flows, the rules every module
 follows, and what comes later and where it plugs in. The first version is deliberately small —
 local models through the OpenAI-compatible API, text-only content types — and is the base the
 rest grows from. The bet it rests on: that a model small enough for a teacher's computer can edit
@@ -127,7 +128,8 @@ src/
                       Nothing else talks to a model
   model/settings.js   the server and model chosen, kept in the window's storage; findServer()
                       takes the first usual server with a model when none is chosen
-  semantics/          content-model.js: params walked with the pack's semantics into nodes, and
+  semantics/          content-model.js: params walked with the pack's semantics into nodes, empty
+                      slots (an answer's feedback or tip not written yet) among them, and
                       editable(); outline.js: the numbered lines the model reads, ids per turn;
                       dialects.js: each field's format from its semantics' tags — [text] or
                       [html: the inline tags it allows] — and the check that refuses text
@@ -137,9 +139,10 @@ src/
                       the formats, the turn, the fix round, and the per-turn schema
   package/            read.js: h5p.json and content.json from a file; working-copy.js: the
                       edited file for the player, the original bytes referenced, not copied
-evals/                the editing spine against the real model, by hand: samples (tasks.js), the
-                      outline, the raw answer, what was applied, the time and the quota, and a
-                      table of runs to judge and copy into the repository (/evals/ in dev)
+evals/                the editing spine against a real model, by hand: samples and tasks, each
+                      from a use case (tasks.js), the outline, the raw answer, what was applied,
+                      the automatic checks (checks.js), the time and the tokens, and a table of
+                      runs to judge and copy into the repository (/evals/ in dev)
 desktop-check/        the desktop check: where the page is, the player playing, a model asked
                       through Tauri's HTTP client and through the page's fetch, the edit played
 src-tauri/            the desktop app: the localhost plugin serving the built site, Tauri's HTTP
@@ -154,7 +157,9 @@ scripts/
                       (apps/demo/scripts/lib/, MIT, LICENSE-h5p-offline-player); pure, runs in a
                       browser
 tests/                Vitest: authoring.test.ts (Create, played by h5p-verify), edit.test.ts (the
-                      editing spine), model.test.ts (model/openai.js against a fake fetch);
+                      editing spine, empty slots played), checks.test.ts (the eval tasks'
+                      checks on good and bad runs), model.test.ts (model/openai.js against a
+                      fake fetch);
                       h5p-verify.d.ts, types for the part of h5p-verify the tests use
 e2e/                  Playwright, against the built site: create.spec.ts, evals.spec.ts, and
                       model-server.ts, the stand-in server on LM Studio's port
@@ -207,11 +212,12 @@ That file is GPL and the published runtime has only `dist/`, so it is not used h
 
 ## Left to do
 
-1. **Prove the bet with real models.** Run the eval page's ten tasks on its four samples with two
-   or three local models — Gemma 4 E4B, a Qwen3.5 of 4B, one of about 9B — judge each run, and put
-   the copied table in `evals/RESULTS.md` with the date, the server, each model and its
-   quantisation, and the machine. Speed, tokens, whether the answer holds to the schema and the
-   ids, and quality in German and Japanese are what to measure. Run Create once per model too.
+1. **Prove the bet with real models.** Run the eval page's thirteen tasks, each on the samples it
+   is for, with two or three local models — Gemma 4 E4B, a Qwen3.5 of 4B, one of about 9B — judge
+   each run, and put the copied table in `evals/RESULTS.md` with the date, the server, each model
+   and its quantisation, and the machine. Speed, tokens, the checks, whether the answer holds to
+   the schema and the ids, and quality in German and Japanese are what to measure. Run Create once
+   per model too, and give Create an eval mode of its own (USE-CASES.md, #1–#2).
 2. **The rest of the first slice** (ARCHITECTURE.md, decision log): `semantics/classify` and
    the semantics of all 55 libraries, `insert`/`remove`/`move` for lists with recipes,
    `history`, the export with the pack's libraries, and the chat in `app/` in place of the

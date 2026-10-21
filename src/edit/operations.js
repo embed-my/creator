@@ -47,7 +47,7 @@ export function applyChanges(params, changes, byId) {
       const title = stripMarkup(read.value).replace(/\s+/g, ' ')
       if (sub?.metadata) sub.metadata.title = escapeHtml(title.length > 60 ? `${title.slice(0, 59)}…` : title)
     }
-    applied.push({ id, label: node.label, from: node.value, to: read.value })
+    applied.push({ id, label: node.label, from: node.value ?? '', to: read.value })
   }
   return { params: next, applied, violations }
 }
@@ -64,6 +64,8 @@ function parse(node, given) {
   switch (node.kind) {
     case 'text': {
       const raw = String(given ?? '')
+      // An empty slot left empty is no change.
+      if (node.empty && !raw.trim()) return { value: node.value }
       const quoted = /^\s*["“„«].*["”»]\s*$/s.test(raw) && !/^["“„«]/.test(node.text ?? '')
       if (ECHO.test(raw) || quoted) {
         return { problem: 'Write only the new text: not the id, the field\'s name or its format in brackets, and no quotation marks round it.', kind: 'format' }
@@ -71,7 +73,7 @@ function parse(node, given) {
       const checked = checkModelText(given, node.format)
       if ('problem' in checked) return { problem: checked.problem, kind: 'format' }
       if (field.maxLength && checked.text.length > field.maxLength) return { problem: `At most ${field.maxLength} characters.`, kind: 'value' }
-      return { value: toHtml(checked.text, node.format, node.value) }
+      return { value: toHtml(checked.text, node.format, node.value || wrapper(field)) }
     }
     case 'boolean': {
       if (typeof given === 'boolean') return { value: given }
@@ -102,7 +104,22 @@ function getAt(object, path) {
   return path.reduce((value, key) => value?.[key], object)
 }
 
+/** Sets the value, making the groups on the way where an empty slot had none, as the editor saves them. */
 function setAt(object, path, value) {
-  const parent = getAt(object, path.slice(0, -1))
-  if (parent && typeof parent === 'object') parent[path[path.length - 1]] = value
+  let parent = object
+  for (const key of path.slice(0, -1)) {
+    if (parent[key] === undefined && typeof key === 'string') parent[key] = {}
+    parent = parent[key]
+    if (!parent || typeof parent !== 'object') return
+  }
+  parent[path[path.length - 1]] = value
+}
+
+/**
+ * How H5P's editor wraps a rich text field's paragraphs where there is no previous value to follow:
+ * in `<p>` where the semantics say `enterMode: "p"`, else in `<div>`.
+ */
+function wrapper(field) {
+  if (field.widget !== 'html' && !Array.isArray(field.tags)) return ''
+  return field.enterMode === 'p' ? '<p>' : '<div>'
 }

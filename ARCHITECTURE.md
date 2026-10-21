@@ -112,6 +112,11 @@ the explanation works. (Create, which has no second turn, is the one place marku
 as a guard.) Added on 2026-10-20 after the first run of the real model wrote `<h1>` round a
 title: the first version told the model "plain text" once, globally, never per field.
 
+An empty text field of the author's inside a list item — an answer's feedback or tip not written
+yet — is an **empty slot**: the outline shows it, as `""`, only when a turn asks for empty fields,
+so that "give every answer feedback" has lines to fill and other turns are not tempted to fill
+them. A value written into one is wrapped as H5P's editor wraps the field.
+
 A field whose text carries meaning — `*blank*` in Fill in the Blanks, Drag Text and Mark the
 Words — has a **dialect** on top of its format, registered per library and field. Asterisks are
 not used by any format, so a blank never collides with bold.
@@ -250,8 +255,9 @@ the window is small. Create keeps its own prompt, as written today.
   answers from fixtures, and the other usual ports refuse. The acceptance
   flow is the test: open a sample, ask for a change, it plays with the change; undo; export; a
   model answer that breaks a constraint is refused with a message.
-- **Real models, by hand.** `evals/` holds a set of tasks, each with a package, a message and
-  what counts as right. They are run against local models on a real machine, and the results go
+- **Real models, by hand.** `evals/` holds a set of tasks, each from a use case in
+  USE-CASES.md, with the samples it is for, a message, what counts as right, and automatic
+  checks of what can be told without reading the words. They are run against local models on a real machine, and the results go
   into a table in the repository with the date, the server, the model and its quantisation, and
   the machine. Speed, tokens, whether counts are honoured, and quality in German and Japanese
   are what to measure. No model is recommended without this table.

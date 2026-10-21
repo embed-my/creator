@@ -6,7 +6,8 @@
  * field, whether it may write HTML and which tags (`semantics/dialects.js`); the system prompt
  * says what each format means. Settings — the true/false, number and choice fields outside list
  * items — are left out unless asked for, since most turns are about words and the window is
- * small.
+ * small. Empty slots — an answer's feedback or tip not written yet — are left out too, unless a
+ * turn asks for them (`empty`), as one that asks for feedback on every answer does.
  *
  *   t1 Title [html: strong em sub sup code]: "The water cycle"
  *   Question 1 (Multiple Choice)
@@ -21,10 +22,10 @@ import { describeFormat } from './dialects.js'
 
 /**
  * @param {import('./content-model.js').Node[]} nodes
- * @param {{ settings?: boolean }} [options]
+ * @param {{ settings?: boolean, empty?: boolean }} [options]
  * @returns {{ text: string, byId: Map<string, import('./content-model.js').Node> }}
  */
-export function outline(nodes, { settings = false } = {}) {
+export function outline(nodes, { settings = false, empty = false } = {}) {
   const lines = []
   const byId = new Map()
   let texts = 0
@@ -36,6 +37,7 @@ export function outline(nodes, { settings = false } = {}) {
       continue
     }
     if (!node.content && !settings) continue
+    if (node.empty && !empty) continue
     const id = node.kind === 'text' ? `t${++texts}` : `s${++values}`
     byId.set(id, node)
     lines.push(lineFor(id, node, indent))

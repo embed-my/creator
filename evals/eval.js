@@ -5,6 +5,11 @@
  * applied or refused, the time and the tokens. A table of runs to judge and copy into the
  * repository. The same modules the app uses; nothing here is a stand-in but the person judging.
  *
+ * Each task carries automatic checks (`checks.js`), run on the content before and after when the
+ * message is the task's own and the sample one it is written for: what changed, whether right
+ * answers stayed right, whether the text got simpler. They catch what is plainly wrong, and their
+ * count goes in the table; the words are still for the person judging.
+ *
  * A text that breaks its field's format (HTML where the field is plain text, a tag the field
  * does not allow) is refused and counted in its own column, before the second try: whether the
  * model keeps to the formats it is told is one of the things measured, so nothing is cleaned
@@ -48,7 +53,7 @@ let current = null
 let byId = new Map()
 /** The runs so far, for the table. */
 const runs = []
-const COLUMNS = ['sample', 'task', 'model', 'time', 'quota', 'changed', 'refused', 'format', 'schema']
+const COLUMNS = ['sample', 'task', 'model', 'time', 'quota', 'changed', 'refused', 'format', 'schema', 'checks']
 
 for (const [key, sample] of Object.entries(SAMPLES)) $('#sample').append(new Option(sample.label, key))
 for (const [index, task] of TASKS.entries()) $('#task').append(new Option(task.label, String(index)))
@@ -94,17 +99,31 @@ function render() {
     return
   }
   const nodes = contentModel(current.params, current.mainLibrary, authoringPack, current.language)
-  const result = outline(nodes, { settings: $('#settings').checked })
+  const result = outline(nodes, { settings: $('#settings').checked, empty: $('#empty').checked })
   byId = result.byId
   $('#outline').textContent = result.text
 }
 
-function showTask() {
+/** The task chosen: its message, its outline options, and a sample it is written for. */
+async function showTask() {
   const task = TASKS[Number($('#task').value)]
   $('#message').value = task.message
-  $('#settings').checked = task.settings
-  $('#right').textContent = `Right when: ${task.right}`
-  render()
+  $('#settings').checked = Boolean(task.settings)
+  $('#empty').checked = Boolean(task.empty)
+  $('#right').textContent = `Use case ${task.use}. Right when: ${task.right} For: ${task.for.join(', ')}. Checked: ${task.checks.map((each) => each.name.toLowerCase()).join('; ')}.`
+  if (current && !task.for.includes(current.name)) {
+    $('#sample').value = task.for[0]
+    await loadSample(task.for[0])
+  } else render()
+}
+
+/** The task's checks on this run, where the message is the task's and the sample one it is for. */
+function runChecks(before, after) {
+  const task = TASKS[Number($('#task').value)]
+  if ($('#message').value.trim() !== task.message) return { cell: '— (own message)', results: [] }
+  if (!task.for.includes(current.name)) return { cell: '— (other sample)', results: [] }
+  const results = task.checks.map((each) => ({ name: each.name, result: each.test({ before, after }) }))
+  return { cell: `${results.filter((each) => each.result === true).length}/${results.length}`, results }
 }
 
 /**
@@ -130,6 +149,8 @@ async function run() {
   $('#run').disabled = true
   $('#answer').textContent = ''
   $('#applied').replaceChildren()
+  $('#checks').replaceChildren()
+  const before = contentModel(current.params, current.mainLibrary, authoringPack, current.language)
   const started = performance.now()
   let conversation = null
   try {
@@ -163,8 +184,10 @@ async function run() {
         const file = await withContent(current.file, { params: result.params })
         setCurrent({ ...current, file, params: result.params })
       }
-      say(`${result.applied.length} field(s) changed, ${result.violations.length} refused, ${formatBreaks} format break(s) on the first try, ${ms} ms. "${parsed.reply ?? ''}"`)
-      runs.push(row({ model: server.model, ms, quota, changed: result.applied.length, refused: result.violations.length, formatBreaks, schema: first.schema, tries: second ? 2 : 1 }))
+      const checked = runChecks(before, contentModel(result.params, current.mainLibrary, authoringPack, current.language))
+      for (const { name, result: outcome } of checked.results) $('#checks').append(item(outcome === true ? `✓ ${name}` : `✗ ${name}: ${outcome}`, outcome === true ? '' : 'violation'))
+      say(`${result.applied.length} field(s) changed, ${result.violations.length} refused, ${formatBreaks} format break(s) on the first try, checks ${checked.cell}, ${ms} ms. "${parsed.reply ?? ''}"`)
+      runs.push(row({ model: server.model, ms, quota, changed: result.applied.length, refused: result.violations.length, formatBreaks, schema: first.schema, tries: second ? 2 : 1, checks: checked.cell }))
     }
     renderRuns()
   } catch (error) {
@@ -184,7 +207,7 @@ function parse(answer) {
   }
 }
 
-function row({ model, ms, quota, changed, refused, formatBreaks, schema, tries }) {
+function row({ model, ms, quota, changed, refused, formatBreaks, schema, tries, checks = '—' }) {
   return {
     sample: current.name,
     task: $('#message').value.trim(),
@@ -195,6 +218,7 @@ function row({ model, ms, quota, changed, refused, formatBreaks, schema, tries }
     refused: String(refused),
     format: String(formatBreaks),
     schema,
+    checks,
     verdict: '',
     notes: ''
   }
@@ -242,6 +266,7 @@ $('#file').addEventListener('change', (event) => {
   event.target.value = ''
 })
 $('#settings').addEventListener('change', render)
+$('#empty').addEventListener('change', render)
 $('#task').addEventListener('change', showTask)
 $('#run').addEventListener('click', run)
 $('#reset').addEventListener('click', () => loadSample($('#sample').value))
@@ -257,5 +282,6 @@ $('#copy').addEventListener('click', async () => {
   say('Copied.')
 })
 
-showTask()
+await showTask()
+$('#sample').value = TASKS[Number($('#task').value)].for[0]
 await loadSample($('#sample').value)

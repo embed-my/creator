@@ -3,6 +3,9 @@
  * libraries' own `semantics.json`, from the pack, into nodes. A text field is content when it
  * is not one of H5P's interface strings (`common` in the semantics) and holds something the
  * author wrote — not empty, and not the default the library brought, in the content's language.
+ * An empty text field of the author's — one with no default, inside a list item that has words,
+ * as an answer's feedback or tip — is an empty slot (`empty`): the outline shows it when a turn
+ * asks for empty fields, so the model can fill it.
  * A yes/no, number or choice is content when it sits inside a list item, as an answer's
  * "Correct" does; elsewhere it is a setting, shown only on request. Media and files are left
  * out: they are carried through as they are.
@@ -30,6 +33,7 @@ import { dialectFor, formatOf, toModel } from './dialects.js'
  * @property {string} [dialect] how the text is read and written
  * @property {import('./dialects.js').Format} [format] a text node's format: where the model may write HTML
  * @property {boolean} [content] whether the node is the author's content rather than a setting
+ * @property {boolean} [empty] an empty text field the author could fill: an answer's feedback, its tip
  * @property {(string | number)[]} [titleOf] for a sub-content's question: the sub-content whose title follows it
  */
 
@@ -100,7 +104,7 @@ class Walk {
           const from = this.nodes.push(heading) - 1
           this.field(field.field, item, [...path, index], { ...ctx, fieldPath: `${ctx.fieldPath}[].${field.field.name}`, depth: ctx.depth + 1, inItem: true, heading })
           // An item with no words of its own — a default score range, an empty tip — is nothing to edit.
-          if (!this.nodes.slice(from + 1).some((node) => node.kind === 'text')) this.nodes.length = from
+          if (!this.nodes.slice(from + 1).some((node) => node.kind === 'text' && !node.empty)) this.nodes.length = from
         })
         return
       }
@@ -131,8 +135,12 @@ class Walk {
     /** @type {Node} */
     const node = { kind: field.type, path, label: field.label ?? field.name, depth: ctx.depth, library: ctx.library, field, value, html, dialect, content: false }
     if (field.type === 'text') {
-      if (typeof value !== 'string' || !value.trim()) return
       const format = formatOf(field, dialect)
+      if (typeof value !== 'string' || !value.trim()) {
+        // An image's alternative text is no slot here: media is carried through, not edited.
+        if (ctx.inItem && field.default === undefined && !/alt ?text$/i.test(field.name)) this.nodes.push({ ...node, content: true, empty: true, text: '', format })
+        return
+      }
       const text = toModel(value, format)
       const brought = field.default === undefined ? null : toModel(field.default, format)
       // The library's own words, untouched, are not the author's: a button label, a heading.

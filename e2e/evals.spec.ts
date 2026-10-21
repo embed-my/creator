@@ -45,6 +45,9 @@ test('a run edits the outline, plays the result and logs the run', async ({ page
   await expect(cells.nth(4)).toHaveText('1200/6000')
   await expect(cells.nth(7)).toHaveText('1')
   await expect(cells.nth(8)).toHaveText('strict')
+  // The first task is "Fix the spelling": the title changed instead, and the checks say so.
+  await expect(cells.nth(9)).toHaveText('1/2')
+  await expect(page.getByLabel('Checks').locator('li')).toHaveText(['✓ Exactly 1 field changed', '✗ "evaporaton" is now "evaporation": question 1 does not read "What drives evaporation?"'])
 
   // The schema's only keys are the outline's ids, each with its kind of value; the second try
   // is asked in the same conversation, so it sees the first.
