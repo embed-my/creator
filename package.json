@@ -1,5 +1,5 @@
 {
-  "name": "h5p-create",
+  "name": "embed-my-creator",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.24.0",
@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "e2e": "playwright test",
-    "typecheck": "tsc"
+    "typecheck": "tsc",
+    "tauri": "tauri"
   },
   "engines": {
     "node": ">=22.12"
@@ -18,11 +19,14 @@
     "@missing-elements/h5p-libraries": "^1.0.0",
     "@missing-elements/h5p-offline-player": "^1.1.0",
     "@missing-elements/h5p-runtime": "^1.0.0",
+    "@tauri-apps/api": "^2.12.4",
+    "@tauri-apps/plugin-http": "^2.8.3",
     "@zip.js/zip.js": "^2.24.0"
   },
   "devDependencies": {
     "@missing-elements/h5p-verify": "^1.0.0",
     "@playwright/test": "^1.64.1",
+    "@tauri-apps/cli": "^2.12.3",
     "@types/node": "^26.6.5",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",

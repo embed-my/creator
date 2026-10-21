@@ -1,4 +1,4 @@
-# h5p-create
+# Embed My Creator
 
 Make an H5P activity from your own text, in the browser, with the AI model built into Chrome. Paste a
 passage, your notes or a lesson summary, choose what to make, and get a `.h5p` file that plays at once
@@ -46,4 +46,4 @@ MIT. `scripts/sweep-content.mjs` is copied from h5p-offline-player, also MIT
 GPL-3.0, and the H5P libraries in the pack have their own licences, listed in
 `@missing-elements/h5p-libraries`' `libraries.txt`.
 
-Not affiliated with H5P Group.
+Not affiliated with H5P Group. H5P is a registered trademark of H5P Group AS.

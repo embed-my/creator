@@ -1,6 +1,6 @@
 # Architecture
 
-h5p-create is an H5P editor driven by chat. A teacher opens or creates an activity, says what
+Embed My Creator is an H5P editor driven by chat. A teacher opens or creates an activity, says what
 should change, and the change plays at once. There are no forms and no fields: the model writes
 the words, code writes the structure, and the H5P package is the only thing that is ever saved.
 
@@ -247,7 +247,7 @@ without seeing a field or a line of JSON.
 
 | Later | Seam in the base |
 | --- | --- |
-| Other models: a local server (Ollama and the like), a cloud model with the teacher's key | `ModelProvider`; a capability record (quota, constrained JSON) chooses what the chat offers |
+| Better models: a local app on the teacher's machine serving the OpenAI-compatible API (Unsloth Studio, LM Studio, Ollama, llama.cpp's `llama-server`); a cloud model with the teacher's key | `ModelProvider`: one `model/openai.js` for all of them, over `/v1/chat/completions` with `response_format` holding the turn's JSON Schema; the base URL, the model and a key are the teacher's settings, and a capability record (window, constrained JSON) chooses what the chat offers. The local server has to allow the app's origin (CORS), and Chrome asks before a public site reaches `localhost`; the app served from `localhost`, or the desktop app, is spared the question |
 | More content types, including layout-driven ones | `classify` widens; a recipe per type; a `layout/` module that places what the model names |
 | Media: files kept, uploaded, placed | the content model already carries media nodes read-only; an asset store and asset slots in recipes |
 | Documents, audio and video as source material | a `source/` step before `create`, producing text |
@@ -270,7 +270,7 @@ without seeing a field or a line of JSON.
 
 | Decision | Chosen |
 | --- | --- |
-| Model | Chrome's on-device model only, behind `ModelProvider`. Others later. |
+| Model | Chrome's on-device model only, behind `ModelProvider`. Others later: better models through a local app's OpenAI-compatible API (2026-10-21). |
 | Content types | Text types, as `classify` defines them; all 55 later. |
 | Runtime | Hosted PWA. A desktop app later, over the same core. |
 | Editing | Chat beside the player, applied at once, undo and redo. No fields, no review lists. |
@@ -283,4 +283,5 @@ without seeing a field or a line of JSON.
 | Backend | None. |
 | Done means | A worksheet becomes an importable activity in ten minutes, with no forms. |
 | First slice | Open any text-typed `.h5p`, edit its text by chat with Chrome's model, undo, export with libraries. |
+| Name | Embed My Creator, at creator.embed-my.org: H5P only in descriptions, as H5P Group's trademark policy allows, never in the product's name (2026-10-21). |
 | Interface language | The player's job: it shows its own words in the content's language. The editor does not relabel them (2026-10-20). |

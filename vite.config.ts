@@ -11,7 +11,8 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: fileURLToPath(new URL('./index.html', import.meta.url)),
-        evals: fileURLToPath(new URL('./evals/index.html', import.meta.url))
+        evals: fileURLToPath(new URL('./evals/index.html', import.meta.url)),
+        desktop: fileURLToPath(new URL('./desktop-check/index.html', import.meta.url))
       }
     }
   }

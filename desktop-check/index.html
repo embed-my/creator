@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Desktop check</title>
+    <style>
+      :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+      body { margin: 16px; display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+      ol { margin: 0; padding-left: 20px; font-size: 14px; line-height: 1.5; }
+      li[data-ok='false'] { color: #c62828; }
+      li pre { margin: 4px 0 8px; white-space: pre-wrap; word-break: break-word; font-size: 12px; opacity: 0.8; }
+      @media (max-width: 800px) { body { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <section>
+      <h1>Desktop check</h1>
+      <ol id="steps"></ol>
+    </section>
+    <h5p-player libraries="pack" untrusted></h5p-player>
+    <script type="module" src="./check.js"></script>
+  </body>
+</html>

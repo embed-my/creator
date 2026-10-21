@@ -19,6 +19,12 @@ base holds for other models and types.
 It started on 2026-10-18 as a draft in missing-elements/h5p-offline-player (issue #47) and moved
 here the same night. Creating from pasted text (four kinds) is built; editing is not yet.
 
+**The name is Embed My Creator** (repository `embed-my/creator`, app id `org.embed-my.creator`),
+renamed from h5p-create on 2026-10-21. H5P Group's trademark policy (<https://h5p.org/trademark>)
+refuses H5P as the main part of a product's name and allows it in descriptions and in code, so
+"H5P" goes in what the app is said to do, never in what it is called; `h5p` in code, file names and
+formats is fine.
+
 It is built on the published packages, installed from npm like any other site that uses them:
 
 - `@missing-elements/h5p-offline-player`: the `<h5p-player>` element, and `mountH5P` from `/sw`
@@ -55,6 +61,31 @@ It is built on the published packages, installed from npm like any other site th
     oldest turns, but never the system prompt.
 - **Sources:** <https://developer.chrome.com/docs/ai/prompt-api> and
   <https://developer.chrome.com/release-notes/148>
+
+## The desktop app (Tauri), as checked on 2026-10-21
+
+`src-tauri/` puts the built site in a window of its own (Tauri 2.12, macOS 26 on Apple silicon;
+Windows and Linux not yet tried). `desktop-check/` is the page that checked it, against
+`scripts/local-model-stand-in.mjs` and against Unsloth Studio serving Gemma 4 E4B (Q6_K):
+
+- **The pages have to come from `http://localhost`.** From Tauri's own `tauri://localhost` the
+  player's Service Worker does not register (`no-worker`) and nothing plays. The localhost plugin
+  (port 47615) serves them from a secure context; the worker registers and the player plays.
+- **Model servers are reached through Tauri's HTTP client** (`@tauri-apps/plugin-http`, from
+  Rust), allowed to `localhost` and `127.0.0.1` in `capabilities/default.json`. Their CORS
+  settings do not matter: the page's own `fetch` to the same server was refused by both, the
+  HTTP client was not, and Chrome's local-network prompt does not exist in the window.
+- **Unsloth Studio** (`unsloth studio run --model <gguf> --api-only --no-cloudflare
+  --disable-tools`) serves the OpenAI-compatible API on `127.0.0.1:8888` with a generated
+  `sk-unsloth-…` key, and holds the answer to `response_format` with the turn's JSON Schema.
+  Gemma 4 E4B changed a title in 8 s, and translated all 20 fields of the quiz sample into German
+  in one answer in 45 s, with no refusal; the edits played.
+
+Build and run it: `. "$HOME/.cargo/env"` (rustup, no profile changes), `pnpm tauri build --debug
+--no-bundle`, then `src-tauri/target/debug/embed-my-creator`. `CREATOR_PAGE=desktop-check/index.html`
+opens the check (`?llm=<base URL>&model=<id>&key=<key>&message=<words>`, the stand-in on 47616
+by default, which also prints the check's steps); `CREATOR_SERVE=tauri` serves from Tauri's
+scheme instead. `pnpm tauri dev` is not tried yet.
 
 ## The design
 
@@ -106,7 +137,12 @@ src/
 evals/                the editing spine against the real model, by hand: samples (tasks.js), the
                       outline, the raw answer, what was applied, the time and the quota, and a
                       table of runs to judge and copy into the repository (/evals/ in dev)
+desktop-check/        the desktop check: where the page is, the player playing, a model asked
+                      through Tauri's HTTP client and through the page's fetch, the edit played
+src-tauri/            the desktop app: the localhost plugin serving the built site, Tauri's HTTP
+                      client allowed to localhost; the window made in lib.rs
 scripts/
+  local-model-stand-in.mjs  an OpenAI-compatible server with no CORS headers, for the check
   authoring-pack.mjs  readAuthoringPack(): the newest of the five libraries in the pack, each with
                       library.json, semantics.json and language/{de,es,fr,ja}.json (137 kB raw),
                       from node_modules/@missing-elements/h5p-libraries/parts (PARTS_DIR);

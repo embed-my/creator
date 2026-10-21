@@ -33,7 +33,7 @@ let dir: string
 
 beforeAll(async () => {
   pack = await readAuthoringPack()
-  dir = await mkdtemp(join(tmpdir(), 'h5p-create-'))
+  dir = await mkdtemp(join(tmpdir(), 'creator-'))
 })
 
 afterAll(async () => {

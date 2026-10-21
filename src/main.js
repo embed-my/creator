@@ -43,7 +43,7 @@ $('#file').addEventListener('change', (event) => {
 
 player.addEventListener('ready', (event) => {
   const title = event.detail.metadata?.title
-  document.title = title ? `${title} · H5P from your text` : 'H5P from your text'
+  document.title = title ? `${title} · Embed My Creator` : 'Embed My Creator'
 })
 
 const openCreate = await createOffer({ onCreated: (file) => play(file, { created: true }) })
