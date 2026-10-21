@@ -1,27 +1,24 @@
 /**
- * Create: a teacher's own text made into an H5P file by Chrome's on-device model, through
- * `model/nano.js`. The text and what the model writes stay on the device. Offered only where the
- * browser has the model or can download it: Firefox, Safari, Android and iOS never see the
- * button. What the model is asked, and how its answer becomes a package, is `authoring.js`,
- * loaded with the pack's semantics the first time Create is used, so the app's first load
- * carries neither.
+ * Create: a teacher's own text made into an H5P file by the model on this computer — the server
+ * and model chosen in the Model dialog, through `model/openai.js`. The text and what the model
+ * writes stay on the computer. What the model is asked, and how its answer becomes a package, is
+ * `authoring.js`, loaded with the pack's semantics the first time Create is used, so the app's
+ * first load carries neither.
  */
 
-import { nano } from './model/nano.js'
+import { ModelError, session as modelSession } from './model/openai.js'
+import { currentServer } from './model/settings.js'
 
 const $ = (selector) => document.querySelector(selector)
 
-/** A problem worth saying in the teacher's words, not the API's. */
+/** A problem worth saying in the teacher's words. */
 class CreateError extends Error {}
 
 /**
- * Whether Create can be offered, and if so, the function that opens its dialog. `onCreated` is
- * handed the package as a `File`, to open as any picked file is.
+ * The function that opens Create's dialog. `onCreated` is handed the package as a `File`, to
+ * open as any picked file is.
  */
-export async function createOffer({ onCreated }) {
-  // 'downloadable' and 'downloading' count: the first Create downloads the model, with its progress shown.
-  if ((await nano.availability('en')) === 'unavailable') return null
-
+export function createOffer({ onCreated }) {
   const dialog = $('#create-dialog')
   const form = $('#create-form')
   const status = $('#create-status')
@@ -29,7 +26,7 @@ export async function createOffer({ onCreated }) {
   const cancel = $('#create-cancel')
   const languageSelect = form.elements.language
 
-  // The browser's language, when the model writes it.
+  // The browser's language, where the pack has it.
   const preferred = navigator.language?.split('-')[0]
   if ([...languageSelect.options].some((option) => option.value === preferred)) languageSelect.value = preferred
 
@@ -65,7 +62,7 @@ export async function createOffer({ onCreated }) {
       onCreated(file)
     } catch (error) {
       if (controller.signal.aborted) say('')
-      else say(explain(error, request.language), 'error')
+      else say(explain(error), 'error')
     } finally {
       setRunning(null)
     }
@@ -85,33 +82,22 @@ export async function createOffer({ onCreated }) {
 }
 
 /**
- * Asks the model and makes the package: the model's availability checked for the language, the
- * session started — which downloads the model the first time, from the click that asked — and
- * its answer, held to the kind's shape, made into content.
+ * Asks the model and makes the package: the model chosen, asked with the kind's shape as the
+ * answer's schema, and its answer made into content.
  */
 async function create({ text, kind, count, language }, signal, say) {
-  const [availability, authoring, pack] = await Promise.all([
-    nano.availability(language),
-    import('./authoring.js'),
-    import('virtual:h5p-authoring-pack').then((module) => module.default)
-  ])
-  if (availability === 'unavailable') throw new CreateError(`Chrome's model on this device does not write ${languageName(language)}.`)
+  const server = currentServer()
+  if (!server) throw new CreateError('Choose a model first, under Model.')
+  const [authoring, pack] = await Promise.all([import('./authoring.js'), import('virtual:h5p-authoring-pack').then((module) => module.default)])
 
   const { system, prompt, schema } = authoring.promptFor(kind, { text, count, language })
-  say(availability === 'available' ? 'Starting the model…' : "Downloading Chrome's model. The first time takes a while…")
-  const session = await nano.session({
-    system,
-    language,
-    signal,
-    onDownload: (loaded) => say(`Downloading Chrome's model: ${Math.round(loaded * 100)}%`)
-  })
-
+  const conversation = await modelSession({ server, system, signal })
   const started = Date.now()
-  const writing = () => say(`Writing… ${Math.round((Date.now() - started) / 1000)} s. It can take a minute on this device.`)
+  const writing = () => say(`Writing… ${Math.round((Date.now() - started) / 1000)} s.`)
   writing()
   const clock = setInterval(writing, 1000)
   try {
-    const answer = await session.prompt(prompt, { schema, signal })
+    const answer = await conversation.prompt(prompt, { schema, signal })
     let parsed
     try {
       parsed = JSON.parse(answer)
@@ -121,20 +107,13 @@ async function create({ text, kind, count, language }, signal, say) {
     return await authoring.packageFrom(authoring.contentFrom(kind, parsed, { pack, language, count }))
   } finally {
     clearInterval(clock)
-    session.destroy()
+    conversation.destroy()
   }
 }
 
 /** What went wrong, for the teacher. */
-function explain(error, language) {
-  if (error instanceof CreateError) return error.message
+function explain(error) {
+  if (error instanceof CreateError || error instanceof ModelError) return error.message
   if (error?.name === 'AuthoringError') return `${error.message} Try again, or with a longer text.`
-  if (error?.name === 'QuotaExceededError') return 'The text is too long for the model on this device. Shorten it and try again.'
-  if (error?.name === 'NotSupportedError') return `Chrome's model on this device does not write ${languageName(language)}.`
-  if (error?.name === 'NotAllowedError') return `Chrome did not let the model start: ${error.message}`
   return `The model could not write it: ${error instanceof Error ? error.message : String(error)}`
-}
-
-function languageName(tag) {
-  return $(`#create-form select[name="language"] option[value="${tag}"]`)?.textContent ?? tag
 }

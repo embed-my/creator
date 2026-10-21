@@ -1,6 +1,6 @@
 /**
- * The page: the player, a file to open, Create where Chrome's model is there, and Save for a file
- * Create made. The element registers its own Service Worker beside its script; the app's own
+ * The page: the player, a file to open, the model server and model Create asks (the Model
+ * dialog), Create, and Save for a file Create made. The element registers its own Service Worker beside its script; the app's own
  * worker, which also keeps the page for offline use (`mountH5P`), is still to come.
  */
 
@@ -8,6 +8,8 @@ import '@missing-elements/h5p-offline-player'
 import { pack } from '@missing-elements/h5p-libraries'
 import { runtime } from '@missing-elements/h5p-runtime'
 import { createOffer } from './create.js'
+import { openModelDialog } from './model-dialog.js'
+import { findServer, modelLabel, onServerChange } from './model/settings.js'
 
 const $ = (selector) => document.querySelector(selector)
 
@@ -46,11 +48,18 @@ player.addEventListener('ready', (event) => {
   document.title = title ? `${title} · Embed My Creator` : 'Embed My Creator'
 })
 
-const openCreate = await createOffer({ onCreated: (file) => play(file, { created: true }) })
-if (openCreate) {
-  $('#create').hidden = false
-  $('#create').addEventListener('click', openCreate)
-  $('#create-offer').hidden = false
-} else {
-  $('#no-model').hidden = false
+/** The Model button names the model chosen; the home page says how to get one where none answers. */
+function showServer(server) {
+  $('#model').textContent = server ? `Model: ${modelLabel(server)}` : 'Model'
+  $('#model').title = server ? `${server.model} at ${server.url}` : 'Choose the model server and model'
+  $('#no-model').hidden = Boolean(server)
 }
+onServerChange(showServer)
+$('#model').addEventListener('click', openModelDialog)
+
+const openCreate = createOffer({ onCreated: (file) => play(file, { created: true }) })
+// Create with no model chosen asks for one first.
+$('#create').addEventListener('click', async () => {
+  if ((await findServer()) || (await openModelDialog())) openCreate()
+})
+showServer(await findServer())

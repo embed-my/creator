@@ -20,7 +20,7 @@ import { AUTHORING_LIBRARIES, PARTS_DIR, readAuthoringPack } from '../scripts/au
 import { mediaIn } from '../scripts/sweep-content.mjs'
 
 /**
- * Create's content, from answers written the way Chrome's model answers, against the real pack:
+ * Create's content, from answers written the way the model answers, against the real pack:
  * whatever the model wrote, what the app makes has to play. Each package is played untrusted by
  * `h5p-verify`, in Chromium, with the installed pack: as a site plays a package it did not make,
  * through the runtime's content check, the port of H5P's validator, which must change nothing.

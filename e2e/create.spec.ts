@@ -1,11 +1,12 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type ConsoleMessage, type Page } from '@playwright/test'
 import { contentFrom, packageFrom } from '../src/authoring.js'
 import { readAuthoringPack } from '../scripts/authoring-pack.mjs'
+import { MODEL, modelServer, type ChatRequest } from './model-server.js'
 
 /*
- * The app in a real browser, with a stand-in for Chrome's model: Create asks it, the answer
- * becomes a package that plays, and Save downloads that package. Without the model, the app still
- * opens and plays a file.
+ * The app in a real browser, with a stand-in model server on LM Studio's port: the app finds it,
+ * Create asks it, the answer becomes a package that plays, and Save downloads that package. With
+ * no server, the app says how to get one and still opens and plays a file.
  */
 
 /** What the stand-in answers, by the list its schema asks for. */
@@ -48,37 +49,17 @@ const pack = readAuthoringPack()
 
 const TEXT = 'The sun heats water in rivers and seas, and it evaporates. The vapour rises, cools and condenses into clouds.'
 
-/**
- * `LanguageModel` as Chrome has it, answering from `answers` by the list the schema asks for, and
- * keeping what it was asked in `__model`. In every document, the content's frame too.
- */
-function standIn(answers: Record<string, unknown>) {
-  const asked: { options: unknown; prompts: string[] } = { options: null, prompts: [] }
-  Object.defineProperty(window, '__model', { value: asked })
-  Object.defineProperty(window, 'LanguageModel', {
-    configurable: true,
-    value: {
-      availability: async () => 'available',
-      create: async (options: { expectedInputs: unknown; expectedOutputs: unknown; initialPrompts: unknown }) => {
-        asked.options = { expectedInputs: options.expectedInputs, expectedOutputs: options.expectedOutputs, initialPrompts: options.initialPrompts }
-        return {
-          prompt: async (text: string, { responseConstraint }: { responseConstraint: { properties: Record<string, unknown> } }) => {
-            asked.prompts.push(text)
-            const list = Object.keys(responseConstraint.properties).find((key) => key !== 'title')!
-            return JSON.stringify(answers[list])
-          },
-          destroy: () => {}
-        }
-      }
-    }
-  })
+/** Answers from `answers` by the list the request's schema asks for. */
+const byList = (answers: Record<string, unknown>) => (request: ChatRequest) => {
+  const list = Object.keys(request.response_format!.json_schema!.schema.properties).find((key) => key !== 'title')!
+  return JSON.stringify(answers[list])
 }
 
-/** Fails the test on anything the page throws or logs as an error. */
-function watchConsole(page: Page): string[] {
+/** Fails the test on anything the page throws or logs as an error, but a port refusing while the app looks for servers. */
+function watchConsole(page: Page, refusal: (message: ConsoleMessage) => boolean): string[] {
   const problems: string[] = []
   page.on('console', (message) => {
-    if (message.type() === 'error') problems.push(message.text())
+    if (message.type() === 'error' && !refusal(message)) problems.push(message.text())
   })
   page.on('pageerror', (error) => problems.push(error.message))
   return problems
@@ -88,9 +69,10 @@ const playerState = (page: Page) => page.locator('h5p-player').evaluate((element
 
 for (const kind of KINDS) {
   test(`Create makes ${kind.label.toLowerCase()} that plays, and Save downloads it`, async ({ page }) => {
-    const problems = watchConsole(page)
-    await page.addInitScript(standIn, ANSWERS)
+    const { asked, refusal } = await modelServer(page, byList(ANSWERS))
+    const problems = watchConsole(page, refusal)
     await page.goto('/')
+    await expect(page.getByRole('button', { name: `Model: ${MODEL}` })).toBeVisible()
 
     await page.getByRole('button', { name: 'Create from your text' }).click()
     const dialog = page.getByRole('dialog', { name: 'Create from your text' })
@@ -107,11 +89,13 @@ for (const kind of KINDS) {
     if (params.introPage?.showIntroPage) await frame.getByRole('button', { name: params.introPage.startButtonText }).click()
     await expect(frame.getByText(kind.shows).first()).toBeVisible()
 
-    // Asked in the language chosen, with the teacher's text.
-    const asked = await page.evaluate(() => (window as unknown as { __model: { options: { expectedOutputs: unknown }; prompts: string[] } }).__model)
-    expect(asked.options.expectedOutputs).toEqual([{ type: 'text', languages: ['de'] }])
-    expect(asked.prompts).toHaveLength(1)
-    expect(asked.prompts[0]).toContain(TEXT)
+    // The model found, asked once, in the language chosen, with the teacher's text and the kind's shape.
+    expect(asked).toHaveLength(1)
+    expect(asked[0].model).toBe(MODEL)
+    expect(asked[0].messages[0]).toMatchObject({ role: 'system', content: expect.stringContaining('Write everything in German') })
+    expect(asked[0].messages[1]).toMatchObject({ role: 'user', content: expect.stringContaining(TEXT) })
+    expect(asked[0].response_format?.type).toBe('json_schema')
+    expect(Object.keys(asked[0].response_format!.json_schema!.schema.properties)).toContain(kind.list)
 
     const download = page.waitForEvent('download')
     await page.getByRole('link', { name: 'Save' }).click()
@@ -121,7 +105,7 @@ for (const kind of KINDS) {
 }
 
 test('Create says so when the model wrote nothing usable', async ({ page }) => {
-  await page.addInitScript(standIn, { ...ANSWERS, questions: { title: 'Empty', questions: [] } })
+  await modelServer(page, byList({ ...ANSWERS, questions: { title: 'Empty', questions: [] } }))
   await page.goto('/')
 
   await page.getByRole('button', { name: 'Create from your text' }).click()
@@ -134,13 +118,19 @@ test('Create says so when the model wrote nothing usable', async ({ page }) => {
   await expect(dialog.getByLabel('Your text')).toBeEnabled()
 })
 
-test('without the model, the app offers no Create and still plays a file', async ({ page }) => {
-  const problems = watchConsole(page)
-  await page.addInitScript(() => Object.defineProperty(window, 'LanguageModel', { configurable: true, value: undefined }))
+test('with no model server, the app says how to get one, and still plays a file', async ({ page }) => {
+  const { refusal } = await modelServer(page, null)
+  const problems = watchConsole(page, refusal)
   await page.goto('/')
 
-  await expect(page.getByText('Creating needs desktop Chrome 148 or later')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Create from your text' })).toBeHidden()
+  await expect(page.getByText('Creating needs a model server on this computer')).toBeVisible()
+  // Create asks for a model first, and the Model dialog says none answers.
+  await page.getByRole('button', { name: 'Create from your text' }).click()
+  const models = page.getByRole('dialog', { name: 'Model' })
+  await expect(models.getByRole('status')).toContainText('No model server answers on the usual ports')
+  await models.getByRole('button', { name: 'Cancel' }).click()
+  await expect(models).toBeHidden()
+  await expect(page.getByRole('dialog', { name: 'Create from your text' })).toBeHidden()
 
   const content = contentFrom('cards', ANSWERS.cards, { pack: await pack })
   const file = await packageFrom(content)

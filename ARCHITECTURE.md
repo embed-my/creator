@@ -4,12 +4,15 @@ Embed My Creator is an H5P editor driven by chat. A teacher opens or creates an 
 should change, and the change plays at once. There are no forms and no fields: the model writes
 the words, code writes the structure, and the H5P package is the only thing that is ever saved.
 
-This document is the base the editor grows from. The first version is deliberately small: one
-model (Chrome's on-device model, through the Prompt API), text-only content types, a hosted PWA.
-What comes later — other models, media, documents as source material, a desktop app — is listed
-at the end with the seam each one plugs into, and nothing in the base may close those seams.
+This document is the base the editor grows from. The first version is deliberately small: a model
+on the teacher's own computer, served by an app such as LM Studio, Ollama, Unsloth Studio or
+llama.cpp and reached through the OpenAI-compatible API; text-only content types; a desktop app
+(Tauri) over the web app. What comes later — a model that comes with the app, a cloud model with
+the teacher's key, media, documents as source material — is listed at the end with the seam each
+one plugs into, and nothing in the base may close those seams.
 
-Decided with the owner on 2026-10-19; the decision log is at the end.
+Decided with the owner on 2026-10-19 and changed on 2026-10-21 (local models, the desktop app);
+the decision log is at the end.
 
 ## The rules every module follows
 
@@ -24,12 +27,13 @@ Decided with the owner on 2026-10-19; the decision log is at the end.
   `@missing-elements/h5p-libraries`, and played `untrusted`, so the runtime's content check guards
   every edit. A package that needs a library the pack lacks opens and plays as it is, and the
   chat says it cannot be edited here.
-- **Small model, small context.** Nothing assumes the model sees the whole package. Every prompt
+- **Small model, small context.** The model runs on the teacher's computer, so it is small and its
+  window is short. Nothing assumes the model sees the whole package. Every prompt
   is a window onto the content, chosen by code, and the answer is a list of operations, not a
   rewrite.
 - **The core is plain modules.** Everything under `src/` but `src/app/` runs in Node and in a
   Worker: no `document`, no `window`, and zip.js is its only dependency. The tests run it in Node;
-  a desktop shell later runs it unchanged.
+  the desktop app runs it unchanged.
 
 ## Modules
 
@@ -45,7 +49,8 @@ src/
               a turn is about); the prompt and the answer schema; the bounded fix loop
   create/     recipes: the shape the model writes for a new activity of a kind, and its assembly
               (today: KINDS in authoring.js, four kinds)
-  model/      the model behind one small interface; one implementation, nano
+  model/      the model behind one small interface: openai.js, any OpenAI-compatible server on
+              this computer; settings.js, the server and model chosen
   history/    IndexedDB: files, versions, chat; undo and redo
   app/        the page: the player, the chat, Open, Save, Export, Undo, versions; the service
               worker for offline
@@ -119,19 +124,18 @@ the checks, the new version.
 **Focus.** Code chooses what the model sees. In order: the sub-content the teacher last
 interacted with in the player (H5P's xAPI statements name it, and the element relays them); a
 part the message names by alias or by its words; the whole content when it fits the model's
-quota; otherwise the chat asks which part. The estimate is characters over four until the Prompt
-API's quota call says better.
+window; otherwise the chat asks which part. The estimate is characters over four until the
+server's token counts (`usage`) say better.
 
 **Operations.** `set(id, value)` for text, number, boolean and select, checked against the
 field's constraints (length, range, options, allowed tags). `insert(listId, index, item)`,
 `remove(id)` and `move(id, index)` for lists whose item kind has a recipe, so a new question is
 written in the recipe's shape and assembled by code with every default. The answer is
-`{ changes: { <id>: <value> }, reply }`, held by `responseConstraint` to a schema made per turn:
-the outline's ids are the only keys of `changes` and each value has its field's kind (a
-boolean, a number in range, one of a select's options, a string), so a wrong id or a "maybe"
-cannot be written. The schema is not sent to the model as text (`omitResponseConstraintInput`):
-the system prompt describes the answer in words, and the window is small. `reply` is the one
-sentence the chat shows.
+`{ changes: { <id>: <value> }, reply }`, held by the server's `response_format` to a JSON
+Schema made per turn: the outline's ids are the only keys of `changes` and each value has its
+field's kind (a boolean, a number in range, one of a select's options, a string), so a wrong id
+or a "maybe" cannot be written. The system prompt describes the answer in words too, for the
+model. `reply` is the one sentence the chat shows.
 
 **Another language is an edit like any other.** The model translates the author's words, and
 nothing else changes. The content type's buttons and messages and H5P's own words (Fullscreen,
@@ -158,21 +162,31 @@ first version; creating from the chat comes when the chat exists.
 
 ```ts
 interface ModelProvider {
-  availability(language): Promise<'available' | 'downloadable' | 'downloading' | 'unavailable'>
-  session({ system, language, signal, onDownload }): Promise<ModelSession>
+  discover(): Promise<(Server & { status: 'ready' | 'no-model' | 'key' | 'absent', models })[]>
+  models(server): Promise<{ id: string; loaded: boolean; window: number | null }[]>
+  session({ server, system, signal }): Promise<ModelSession>
 }
 interface ModelSession {
-  prompt(text, { schema, omitSchema, signal }): Promise<string>
-  quota(): { used: number; total: number } | null
+  prompt(text, { schema, json, signal }): Promise<string>
+  quota(): { used: number; total: number | null } | null
   destroy(): void
 }
+// Server: { name, url (ending in /v1), model, key?, window? }
 ```
 
-One implementation, `nano`, over `LanguageModel`: `availability` and `create` with the language
-options Create uses today, `responseConstraint` for the schema (and
-`omitResponseConstraintInput` when the prompt already describes it), `contextUsage` and
-`contextWindow` for the quota (`inputUsage` and `inputQuota` before Chrome renamed them). The interface is as small as the base needs, and it is the seam for other models.
-Nothing else in the app touches `LanguageModel`.
+One implementation, `openai.js`, for every server that speaks the OpenAI-compatible Chat
+Completions API: `GET /v1/models`, and `POST /v1/chat/completions` with `response_format`
+holding the JSON Schema (`{ json: true }` asks for any JSON object, for a server that refuses
+the schema). In the desktop app the requests go through Tauri's HTTP client, from Rust, so the
+servers' CORS settings do not matter; in a browser they go through `fetch`, which reaches only a
+server that allows the page's origin. A session keeps its turns and sends them with every
+prompt, so the fix round sees the answer it is about. `discover()` asks the usual ports (LM
+Studio 1234, Ollama 11434, Unsloth Studio 8888, llama.cpp 8080). The quota is the last answer's
+`usage`, against the window where the server names it.
+
+`settings.js` keeps the server and model chosen in the Model dialog, with its key, in the
+window's storage, and takes the first usual server that answers with a model when none is
+chosen. Nothing else in the app talks to a model.
 
 ### history
 
@@ -189,9 +203,11 @@ The page is the player on one side and the chat on the other. Open takes a file;
 made or the chat edited is played at once through the working copy; Save writes the clean
 export over a download link (and, where the File System Access API is there, over the opened
 file on request); Export with libraries is the same writer with the pack's folders. Undo, redo
-and a list of versions sit above the chat. The service worker calls `mountH5P(self)` and
-precaches the shell, as the player repo's installable app does, so the editor works offline once
-the model is downloaded.
+and a list of versions sit above the chat. The Model button names the model, and its dialog
+chooses the server and the model. In the desktop app, Tauri's localhost plugin serves the built
+site from the app itself, so the editor needs no network; the pages come from `http://localhost`
+because the player's Service Worker registers only there (from Tauri's own scheme it does not,
+checked 2026-10-21).
 
 ## Flows
 
@@ -230,14 +246,17 @@ the window is small. Create keeps its own prompt, as written today.
   round-trips. `edit`: each operation applied and checked, violations named. `create`: as today.
 - **Played.** Every exported sample is played untrusted by `h5p-verify` against the pack, the
   content check changing nothing, as `tests/authoring.test.ts` does for Create.
-- **Browser, three engines.** A stand-in `LanguageModel` answers from fixtures. The acceptance
+- **Browser, three engines.** A stand-in model server on LM Studio's port (Playwright routes)
+  answers from fixtures, and the other usual ports refuse. The acceptance
   flow is the test: open a sample, ask for a change, it plays with the change; undo; export; a
   model answer that breaks a constraint is refused with a message.
-- **The real model, by hand.** `evals/` holds a set of tasks, each with a package, a message
-  and what counts as right. They are run against Chrome's model on a real machine, and the
-  results go into a table in the repository with the date and the Chrome version. Speed,
-  quota, whether counts are honoured, and quality in German and Japanese are what to measure.
-  No decision about the model's limits is made without this table.
+- **Real models, by hand.** `evals/` holds a set of tasks, each with a package, a message and
+  what counts as right. They are run against local models on a real machine, and the results go
+  into a table in the repository with the date, the server, the model and its quantisation, and
+  the machine. Speed, tokens, whether counts are honoured, and quality in German and Japanese
+  are what to measure. No model is recommended without this table.
+- **The desktop app.** `desktop-check/` runs in the app's window: the player plays, a model is
+  asked through `model/openai.js` and Tauri's HTTP client, the edit plays.
 
 The acceptance test the whole thing is held to: a teacher with no technical background turns a
 worksheet into an importable activity in ten minutes, and fixes what is wrong by chatting,
@@ -247,20 +266,27 @@ without seeing a field or a line of JSON.
 
 | Later | Seam in the base |
 | --- | --- |
-| Better models: a local app on the teacher's machine serving the OpenAI-compatible API (Unsloth Studio, LM Studio, Ollama, llama.cpp's `llama-server`); a cloud model with the teacher's key | `ModelProvider`: one `model/openai.js` for all of them, over `/v1/chat/completions` with `response_format` holding the turn's JSON Schema; the base URL, the model and a key are the teacher's settings, and a capability record (window, constrained JSON) chooses what the chat offers. The local server has to allow the app's origin (CORS), and Chrome asks before a public site reaches `localhost`; the app served from `localhost`, or the desktop app, is spared the question |
+| A model that comes with the app: llama.cpp's `llama-server` started by the app, with a recommended model | a Tauri sidecar on a port of its own; `settings.js` finds it like any other server |
+| A cloud model with the teacher's key | `model/openai.js` already speaks the API; the Model dialog gains the address and the key, and says that the text then leaves the computer |
 | More content types, including layout-driven ones | `classify` widens; a recipe per type; a `layout/` module that places what the model names |
 | Media: files kept, uploaded, placed | the content model already carries media nodes read-only; an asset store and asset slots in recipes |
 | Documents, audio and video as source material | a `source/` step before `create`, producing text |
-| A desktop app (Tauri) with real file access | the core is DOM-free; `src/app/` is the only platform code; the store gets a second backend |
+| The desktop app on Windows and Linux, signed installers, real file access, the key in the system's keychain | `src-tauri/`; the core is DOM-free, `src/app/` is the only platform code, and the store gets a second backend |
 | The runtime's content-check notes shown in the chat | a player feature: the element reports the check's notes as an event when playing untrusted |
 | Export compatibility for older H5P sites | the pack's `index.json` gaining each library's `coreApi`, and a report in the Export dialog |
 
 ## Risks
 
-- The model's quota and quality are unmeasured. The eval table decides; the focus mechanism is
-  the mitigation, and a message the window cannot hold ends in the chat asking for a part.
-- Whether `responseConstraint` honours `minItems`/`maxItems` is unknown; counts are enforced in
-  code, as in Create.
+- Quality differs from model to model and is barely measured: two runs of Gemma 4 E4B on
+  2026-10-21. The eval table decides which models the app recommends; the focus mechanism is the
+  mitigation for short windows, and a message the window cannot hold ends in the chat asking for
+  a part.
+- A teacher has to install a model server and load a model before Create works. The app finds
+  the usual ones and says how to get one; a model that comes with the app is in Growth.
+- Models that think before they answer spend tokens and time on it: 1,334 tokens for an answer
+  of about 500 on 2026-10-21, 45 s in all.
+- Whether every server honours JSON Schema's `minItems`/`maxItems` is unknown; counts are
+  enforced in code, as in Create.
 - H5P sites with an older core refuse newer libraries. The export carries the pack's versions
   and nothing else; the compatibility report is deferred.
 - Selection in the player is one-way: the app can learn which part the teacher touched, but
@@ -270,9 +296,9 @@ without seeing a field or a line of JSON.
 
 | Decision | Chosen |
 | --- | --- |
-| Model | Chrome's on-device model only, behind `ModelProvider`. Others later: better models through a local app's OpenAI-compatible API (2026-10-21). |
+| Model | A model on the teacher's computer, through the OpenAI-compatible API of the app that serves it (LM Studio, Ollama, Unsloth Studio, llama.cpp), behind `model/openai.js` (2026-10-21). Chrome's built-in model was the first choice and is dropped: it worked, but it is one small model that Google chooses and changes, in one browser. |
 | Content types | Text types, as `classify` defines them; all 55 later. |
-| Runtime | Hosted PWA. A desktop app later, over the same core. |
+| Runtime | A desktop app (Tauri) over the web app, its pages served from `localhost` (2026-10-21). First a hosted PWA. |
 | Editing | Chat beside the player, applied at once, undo and redo. No fields, no review lists. |
 | Selection | By the part the teacher last touched in the player, or by naming it. |
 | Where work lives | The `.h5p` is the truth; history and chat beside it, in the browser. |
@@ -282,6 +308,6 @@ without seeing a field or a line of JSON.
 | Media and documents | None in the base. |
 | Backend | None. |
 | Done means | A worksheet becomes an importable activity in ten minutes, with no forms. |
-| First slice | Open any text-typed `.h5p`, edit its text by chat with Chrome's model, undo, export with libraries. |
+| First slice | Open any text-typed `.h5p`, edit its text by chat with a local model, undo, export with libraries. |
 | Name | Embed My Creator, at creator.embed-my.org: H5P only in descriptions, as H5P Group's trademark policy allows, never in the product's name (2026-10-21). |
 | Interface language | The player's job: it shows its own words in the content's language. The editor does not relabel them (2026-10-20). |

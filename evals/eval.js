@@ -1,8 +1,9 @@
 /**
- * The eval page: the editing spine driven by hand against the real model, with every step shown
- * — the system prompt, the outline the model reads, its raw answer, what was applied or refused,
- * the time and the quota — and a table of runs to judge and copy into the repository. The same
- * modules the app will use; nothing here is a stand-in but the person judging.
+ * The eval page: the editing spine driven by hand against a real model on this computer — the one
+ * chosen with the Model button, recorded with every run, so that models can be compared — with
+ * every step shown: the system prompt, the outline the model reads, its raw answer, what was
+ * applied or refused, the time and the tokens. A table of runs to judge and copy into the
+ * repository. The same modules the app uses; nothing here is a stand-in but the person judging.
  *
  * A text that breaks its field's format (HTML where the field is plain text, a tag the field
  * does not allow) is refused and counted in its own column, before the second try: whether the
@@ -16,8 +17,10 @@ import { runtime } from '@missing-elements/h5p-runtime'
 import authoringPack from 'virtual:h5p-authoring-pack'
 import { contentFrom, packageFrom } from '../src/authoring.js'
 import { applyChanges } from '../src/edit/operations.js'
-import { LOOSE_EDIT_SCHEMA, editPrompt, editSchema, editSystem, fixPrompt } from '../src/edit/prompt.js'
-import { nano } from '../src/model/nano.js'
+import { editPrompt, editSchema, editSystem, fixPrompt } from '../src/edit/prompt.js'
+import { openModelDialog } from '../src/model-dialog.js'
+import { ModelError, session as modelSession } from '../src/model/openai.js'
+import { currentServer, findServer, modelLabel, onServerChange } from '../src/model/settings.js'
 import { readPackage } from '../src/package/read.js'
 import { withContent } from '../src/package/working-copy.js'
 import { contentModel, editable } from '../src/semantics/content-model.js'
@@ -30,14 +33,22 @@ player.runtime = runtime
 player.pack = pack
 
 $('#environment').textContent = `${navigator.userAgentData?.brands?.map((brand) => `${brand.brand} ${brand.version}`).join(', ') ?? navigator.userAgent} · ${new Date().toISOString().slice(0, 10)}`
-if ((await nano.availability('en')) === 'unavailable') $('#no-model').hidden = false
+/** The model the runs ask, named on its button; every run records it. */
+function showServer(server) {
+  $('#model').textContent = server ? `Model: ${modelLabel(server)}` : 'Choose a model'
+  $('#model').title = server ? `${server.model} at ${server.url}` : ''
+  $('#no-model').hidden = Boolean(server)
+}
+onServerChange(showServer)
+$('#model').addEventListener('click', openModelDialog)
+showServer(await findServer())
 
 /** The content being edited: its file as the player plays it, and its two JSON files. */
 let current = null
 let byId = new Map()
 /** The runs so far, for the table. */
 const runs = []
-const COLUMNS = ['sample', 'task', 'time', 'quota', 'changed', 'refused', 'format', 'schema']
+const COLUMNS = ['sample', 'task', 'model', 'time', 'quota', 'changed', 'refused', 'format', 'schema']
 
 for (const [key, sample] of Object.entries(SAMPLES)) $('#sample').append(new Option(sample.label, key))
 for (const [index, task] of TASKS.entries()) $('#task').append(new Option(task.label, String(index)))
@@ -96,13 +107,16 @@ function showTask() {
   render()
 }
 
-/** Asks with this turn's schema; where the browser's model refuses it, with the loose one, and says which. */
-async function ask(session, text) {
+/**
+ * Asks with this turn's schema; where the server refuses the schema (a 400 or 422), for any JSON
+ * object instead, and says which.
+ */
+async function ask(conversation, text) {
   try {
-    return { answer: await session.prompt(text, { schema: editSchema(byId), omitSchema: true }), schema: 'strict' }
+    return { answer: await conversation.prompt(text, { schema: editSchema(byId) }), schema: 'strict' }
   } catch (error) {
-    if (error?.name !== 'NotSupportedError' && error?.name !== 'TypeError' && error?.name !== 'SyntaxError') throw error
-    return { answer: await session.prompt(text, { schema: LOOSE_EDIT_SCHEMA, omitSchema: true }), schema: `loose (${error.name}: ${error.message})` }
+    if (!(error instanceof ModelError) || (error.status !== 400 && error.status !== 422)) throw error
+    return { answer: await conversation.prompt(text, { json: true }), schema: `loose (${error.status}: ${error.message})` }
   }
 }
 
@@ -110,25 +124,25 @@ async function run() {
   if (!current) return say('Load a sample or open an editable file first.', 'error')
   const message = $('#message').value.trim()
   if (!message) return say('Write what should change.', 'error')
-  if ((await nano.availability(current.language)) === 'unavailable') return say("Chrome's model is not available here.", 'error')
+  const server = currentServer()
+  if (!server) return say('Choose a model first.', 'error')
 
   $('#run').disabled = true
   $('#answer').textContent = ''
   $('#applied').replaceChildren()
   const started = performance.now()
-  let session = null
+  let conversation = null
   try {
-    say('Starting the model…')
-    session = await nano.session({ system: editSystem(current.language), language: current.language, onDownload: (loaded) => say(`Downloading Chrome's model: ${Math.round(loaded * 100)}%`) })
-    say('Writing…')
-    const first = await ask(session, editPrompt($('#outline').textContent, message))
+    conversation = await modelSession({ server, system: editSystem(current.language) })
+    say(`Writing (${modelLabel(server)})…`)
+    const first = await ask(conversation, editPrompt($('#outline').textContent, message))
     const parsed = parse(first.answer)
     let result = parsed ? applyChanges(current.params, parsed.changes, byId) : null
     const formatBreaks = result ? result.violations.filter((violation) => violation.kind === 'format').length : 0
     let second = null
     if (result && result.violations.length) {
       say('Asking once more about the refused fields…')
-      second = await ask(session, fixPrompt(result.violations))
+      second = await ask(conversation, fixPrompt(result.violations))
       const again = parse(second.answer)
       if (again) {
         const retried = applyChanges(result.params, again.changes, byId)
@@ -136,12 +150,12 @@ async function run() {
       }
     }
     const ms = Math.round(performance.now() - started)
-    const quota = session.quota()
+    const quota = conversation.quota()
 
     $('#answer').textContent = second ? `${first.answer}\n\n— after the refusals —\n${second.answer}` : first.answer
     if (!parsed || !result) {
       say(`The answer was not the JSON asked for (${ms} ms).`, 'error')
-      runs.push(row({ ms, quota, changed: 0, refused: 'not JSON', formatBreaks: 0, schema: first.schema, tries: 1 }))
+      runs.push(row({ model: server.model, ms, quota, changed: 0, refused: 'not JSON', formatBreaks: 0, schema: first.schema, tries: 1 }))
     } else {
       for (const change of result.applied) $('#applied').append(item(`${change.id} ${change.label}: ${String(change.from)} → ${String(change.to)}`))
       for (const refusal of result.violations) $('#applied').append(item(`${refusal.id} ${refusal.label}: ${refusal.problem}`, 'violation'))
@@ -150,13 +164,13 @@ async function run() {
         setCurrent({ ...current, file, params: result.params })
       }
       say(`${result.applied.length} field(s) changed, ${result.violations.length} refused, ${formatBreaks} format break(s) on the first try, ${ms} ms. "${parsed.reply ?? ''}"`)
-      runs.push(row({ ms, quota, changed: result.applied.length, refused: result.violations.length, formatBreaks, schema: first.schema, tries: second ? 2 : 1 }))
+      runs.push(row({ model: server.model, ms, quota, changed: result.applied.length, refused: result.violations.length, formatBreaks, schema: first.schema, tries: second ? 2 : 1 }))
     }
     renderRuns()
   } catch (error) {
     say(`${error?.name ?? 'Error'}: ${error?.message ?? error}`, 'error')
   } finally {
-    session?.destroy()
+    conversation?.destroy()
     $('#run').disabled = false
   }
 }
@@ -170,12 +184,13 @@ function parse(answer) {
   }
 }
 
-function row({ ms, quota, changed, refused, formatBreaks, schema, tries }) {
+function row({ model, ms, quota, changed, refused, formatBreaks, schema, tries }) {
   return {
     sample: current.name,
     task: $('#message').value.trim(),
+    model,
     time: `${(ms / 1000).toFixed(1)} s${tries > 1 ? ' (2 tries)' : ''}`,
-    quota: quota ? `${quota.used}/${quota.total}` : '?',
+    quota: quota ? `${quota.used}/${quota.total ?? '?'}` : '?',
     changed: String(changed),
     refused: String(refused),
     format: String(formatBreaks),

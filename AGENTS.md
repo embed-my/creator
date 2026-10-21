@@ -5,16 +5,18 @@ visiting the repository.
 
 ## What this is
 
-An H5P editor driven by chat, in an installable web app (PWA): a teacher creates an activity from
-their own text or opens an existing `.h5p`, says what should change, and the change plays at
-once. Chrome's on-device model writes the words; code writes the structure; there are no forms.
-The text and what the model writes stay on the device, and the app works offline once installed.
+An H5P editor driven by chat, as a desktop app (Tauri) over a web app: a teacher creates an
+activity from their own text or opens an existing `.h5p`, says what should change, and the change
+plays at once. A model on the teacher's own computer — served by LM Studio, Ollama, Unsloth Studio
+or llama.cpp — writes the words; code writes the structure; there are no forms. The text and what
+the model writes never leave the computer.
 
 [ARCHITECTURE.md](ARCHITECTURE.md) is the design: the modules, the flows, the rules every module
 follows, and what comes later and where it plugs in. The first version is deliberately small —
-Chrome's model only, text-only content types — and is the base the rest grows from. The bet it
-rests on: that Chrome's small model can edit the text of text-typed content well. If it can, the
-base holds for other models and types.
+local models through the OpenAI-compatible API, text-only content types — and is the base the
+rest grows from. The bet it rests on: that a model small enough for a teacher's computer can edit
+the text of text-typed content well. Chrome's built-in model was the first choice, and was dropped
+on 2026-10-21 for local models (see the decision log).
 
 It started on 2026-10-18 as a draft in missing-elements/h5p-offline-player (issue #47) and moved
 here the same night. Creating from pasted text (four kinds) is built; editing is not yet.
@@ -32,35 +34,31 @@ It is built on the published packages, installed from npm like any other site th
 - `@missing-elements/h5p-runtime`: the `runtime` export.
 - `@missing-elements/h5p-libraries`: the `pack` export, and `parts/` for the semantics.
 
-## Chrome's Prompt API, as checked on 2026-10-18
+## Local model servers, as checked on 2026-10-21
 
-- **Availability:** `LanguageModel` reached the web in Chrome 148 (May 2026); before that it was
-  for extensions only. Sampling parameters (temperature, topK) are still an origin trial.
-- **Requirements:**
-  - OS: Windows 10/11, macOS 13+, Linux, or ChromeOS on a Chromebook Plus. No Android or iOS.
-  - Disk: 22 GB free on the profile's volume. The model is removed below 10 GB free.
-  - Hardware: a GPU with more than 4 GB of VRAM, or 16 GB of RAM and 4 CPU cores.
-- **Languages:** input and output in en, ja, es, de and fr.
-- **Calls:**
-  - `availability(options)` returns `unavailable`, `downloadable`, `downloading` or `available`.
-    Pass the same options as `create()`.
-  - `create({ expectedInputs, expectedOutputs, initialPrompts, signal, monitor })` downloads the
-    model the first time and needs a user click. It fires `downloadprogress` events whose
-    `loaded` runs from 0 to 1.
-  - `session.prompt(text, { responseConstraint: jsonSchema, signal })`. The schema is sent to
-    the model as part of the prompt unless `omitResponseConstraintInput: true` (checked
-    2026-10-20); the docs then advise describing the answer in the prompt. Which JSON Schema
-    keywords are honoured is not documented: the docs' examples use `type`, `properties`,
-    `required`, `items`, `maxItems`, `pattern` and `additionalProperties: false`.
-  - `session.contextUsage` / `session.contextWindow` and `measureContextUsage()`: renamed from
-    `inputUsage` / `inputQuota` / `measureInputUsage()`; `model/nano.js` reads both.
-- **Limits:**
-  - Not available in Web Workers.
-  - A cross-origin iframe needs `allow="language-model"`.
-  - No context-window size is documented; an overflow fires `contextoverflow` and drops the
-    oldest turns, but never the system prompt.
-- **Sources:** <https://developer.chrome.com/docs/ai/prompt-api> and
-  <https://developer.chrome.com/release-notes/148>
+- **The API:** each serves the OpenAI-compatible Chat Completions API under `/v1`: `GET
+  /v1/models`, and `POST /v1/chat/completions` with `response_format: { type: 'json_schema',
+  json_schema: { name, strict, schema } }`, which holds the answer to the schema.
+  `model/openai.js` is the only module that speaks it.
+- **The usual ports**, where `discover()` looks (1.5 s each): LM Studio 1234, Ollama 11434,
+  Unsloth Studio 8888, llama.cpp's `llama-server` 8080. Another address can be typed in the
+  Model dialog.
+- **Unsloth Studio** (2026.9.4, checked): `unsloth studio run --model <gguf or HF repo> --api-only
+  --no-cloudflare --disable-tools`. It binds `127.0.0.1:8888`, prints a generated
+  `sk-unsloth-…` key, which every request needs, and lists `context_length` and `loaded` for
+  each model in `/v1/models`. Its CORS check refuses other origins (a 400 to the preflight).
+  `--cloudflare` would put it on a public URL: never.
+- **LM Studio:** `lms server start`, or the server switch in the app; its CORS is a setting.
+  On 2026-10-21 the command line could not wake its service on this Mac, so it is not checked
+  here.
+- **Ollama:** the API at `/v1` on 11434; the origins it allows are `OLLAMA_ORIGINS`. Not checked
+  here (only coding models were installed).
+- **What differs:** whether a server names a model's window (Unsloth Studio does; where none
+  does, the eval page shows tokens over `?`), whether it needs a key, and whether the model thinks
+  before it answers, which costs tokens and time (Gemma 4 E4B: 1,334 tokens for an answer of
+  about 500).
+- **The key** is kept with the server in the window's storage, on this computer only; it should
+  move to the system's keychain (Left to do).
 
 ## The desktop app (Tauri), as checked on 2026-10-21
 
@@ -90,7 +88,7 @@ scheme instead. `pnpm tauri dev` is not tried yet.
 ## The design
 
 **The model writes the words; code writes the structure.** The model answers a small JSON shape
-per kind of activity, held to it by `responseConstraint`. Code turns that into `content.json`
+per kind of activity, held to it by the server's `response_format`. Code turns that into `content.json`
 with `ContentGenerator`, from the pack's own `semantics.json`. Every field is there with its
 default, the versions are the pack's, and the model never sees H5P's form definitions.
 
@@ -104,26 +102,31 @@ default, the versions are the pack's, and the model never sees H5P's form defini
 ## Layout
 
 ```text
-index.html            the page: the bar (Create, Open a file, Save), the home text, the
+index.html            the page: the bar (Model, Create, Open a file, Save), the home text, the
                       <h5p-player libraries="pack" resume="device">, and the Create dialog
 vite.config.ts        authoringPackPlugin(), for virtual:h5p-authoring-pack
 src/
   main.js             the page's script: the element with the runtime and the pack, a picked
-                      file played, Create offered where createOffer says so, and Save (an
-                      <a download> on an object URL) for a file Create made
+                      file played, the Model button naming the model chosen, Create (asking for
+                      a model first where none is chosen), and Save (an <a download> on an
+                      object URL) for a file Create made
   app.css             the page's styles, light and dark
   authoring.js        pure but for zip.js: KINDS, schemaFor, promptFor (the text capped at 6000
                       characters), contentFrom (h5p.json and the params), packageFrom (a
                       content-only .h5p File), and the helpers translated, escapeHtml,
                       blankSentence, fileName
-  create.js           the dialog: createOffer({ onCreated }) returns a function that opens it, or
-                      null where the model is unavailable; loads authoring.js and the pack's
-                      semantics lazily, so they are chunks of their own; shows the model
-                      download's progress, an elapsed-time line while the model writes, and
-                      plain-language errors
-  model/nano.js       Chrome's model behind the one interface the app talks to: availability,
-                      a session with a system prompt, prompt(text, { schema }), quota. Nothing
-                      else touches LanguageModel
+  create.js           the dialog: createOffer({ onCreated }) returns the function that opens it;
+                      loads authoring.js and the pack's semantics lazily, so they are chunks of
+                      their own; asks the model chosen, with an elapsed-time line while it
+                      writes, and says what went wrong in plain words
+  model-dialog.js     the Model dialog, built in script so the app and the eval page share it: the
+                      usual ports looked at, the server's models offered, a key where it wants one
+  model/openai.js     the model behind the one interface the app talks to: SERVERS, discover(),
+                      models(server), session({ server, system }) with prompt(text, { schema }) and
+                      quota(); Tauri's HTTP client in the desktop app, fetch in a browser.
+                      Nothing else talks to a model
+  model/settings.js   the server and model chosen, kept in the window's storage; findServer()
+                      takes the first usual server with a model when none is chosen
   semantics/          content-model.js: params walked with the pack's semantics into nodes, and
                       editable(); outline.js: the numbered lines the model reads, ids per turn;
                       dialects.js: each field's format from its semantics' tags — [text] or
@@ -150,19 +153,21 @@ scripts/
   sweep-content.mjs   ContentGenerator, copied unchanged from the player repo
                       (apps/demo/scripts/lib/, MIT, LICENSE-h5p-offline-player); pure, runs in a
                       browser
-tests/
-  authoring.test.ts   Vitest
-  h5p-verify.d.ts     types for the part of h5p-verify the tests use
-e2e/
-  create.spec.ts      Playwright, against the built site
+tests/                Vitest: authoring.test.ts (Create, played by h5p-verify), edit.test.ts (the
+                      editing spine), model.test.ts (model/openai.js against a fake fetch);
+                      h5p-verify.d.ts, types for the part of h5p-verify the tests use
+e2e/                  Playwright, against the built site: create.spec.ts, evals.spec.ts, and
+                      model-server.ts, the stand-in server on LM Studio's port
 ```
 
-The element registers its own Service Worker, emitted beside its script by Vite. The app's own
-worker, with `mountH5P` and the precached shell, is still to come (see Left to do).
+The element registers its own Service Worker, emitted beside its script by Vite; in the desktop
+app it runs because the pages come from `http://localhost`.
 
 ## Tests
 
-`pnpm test` runs `tests/authoring.test.ts`. The tests build packages from answers written the way
+`pnpm test` runs `tests/`. `model.test.ts` checks what `model/openai.js` asks a server, in the
+shape the servers take, and what it makes of their answers and errors, against a fake `fetch`.
+`authoring.test.ts` builds packages from answers written the way
 the model answers, against the real pack. Each kind, in English, German and Japanese, is zipped and
 played untrusted by `@missing-elements/h5p-verify` in Chrome, with the pack from `PARTS_DIR`, so no
 network is needed. Untrusted means as a site plays a package it did not make: through the
@@ -173,12 +178,15 @@ have saved.
 The verifier needs Chrome or Edge, or `npx playwright install chromium`. GitHub's Ubuntu runners
 have Chrome.
 
-`pnpm build && pnpm e2e` runs `e2e/create.spec.ts` against `vite preview`, in Chromium, Firefox and
-WebKit (`pnpm exec playwright install chromium firefox webkit` the first time). An init script puts
-a stand-in `LanguageModel` in the page, which answers by the list its schema asks for and records
-what it was asked. For each kind, Create should play the file it made and Save should download it
-under its title. A model answer with nothing usable should leave the dialog open with the error.
-Without `LanguageModel`, the app should offer no Create and still play a picked `.h5p`.
+`pnpm build && pnpm e2e` runs `e2e/` against `vite preview`, in Chromium, Firefox and WebKit
+(`pnpm exec playwright install chromium firefox webkit` the first time). `model-server.ts` routes
+LM Studio's port to a stand-in server, with the CORS headers a page needs, which answers by the
+list the schema asks for and keeps every request; the other usual ports refuse, and the console
+errors the browser logs for them are told apart from real ones. The app should find the server
+and name its model. For each kind, Create should play the file it made and Save should download
+it under its title. A model answer with nothing usable should leave the dialog open with the
+error. With no server, the home page should say how to get one, Create should open the Model
+dialog, and a picked `.h5p` should still play.
 
 The player repo's copy of these tests imported the runtime's `content-check.ts` from its source.
 That file is GPL and the published runtime has only `dist/`, so it is not used here.
@@ -199,19 +207,20 @@ That file is GPL and the published runtime has only `dist/`, so it is not used h
 
 ## Left to do
 
-1. **Prove the bet with the real model.** The `evals/` page exists (2026-10-19) and is tested
-   with a stand-in; nobody has run it against Chrome's model yet. Run its ten tasks on its four
-   samples in Chrome 148+ by hand, judge each, and put the copied table in `evals/RESULTS.md`
-   with the date and the Chrome version. Speed, the quota, whether the answer holds to the
-   schema and the ids, and quality in German and Japanese are what to measure. Also run Create
-   once, to settle whether `responseConstraint` honours `minItems`/`maxItems`.
+1. **Prove the bet with real models.** Run the eval page's ten tasks on its four samples with two
+   or three local models — Gemma 4 E4B, a Qwen3.5 of 4B, one of about 9B — judge each run, and put
+   the copied table in `evals/RESULTS.md` with the date, the server, each model and its
+   quantisation, and the machine. Speed, tokens, whether the answer holds to the schema and the
+   ids, and quality in German and Japanese are what to measure. Run Create once per model too.
 2. **The rest of the first slice** (ARCHITECTURE.md, decision log): `semantics/classify` and
    the semantics of all 55 libraries, `insert`/`remove`/`move` for lists with recipes,
    `history`, the export with the pack's libraries, and the chat in `app/` in place of the
    eval page's controls.
-3. **Installable and offline.** The app's own Service Worker, which calls `mountH5P(self)` and
-   precaches the shell and the pack's parts, as the player repo's `/app/sw.js` does; the element
-   then uses it through `sw`. A web app manifest and icons.
+3. **The desktop app beyond this Mac.** Builds for Windows and Linux in CI, and the desktop check
+   run there; `pnpm tauri dev`; signed installers; the key in the system's keychain instead of the
+   window's storage.
 4. **Close issue #47** in missing-elements/h5p-offline-player, linking this repository.
 
-Done: the page, Create and Save (2026-10-19), and the browser tests with a stand-in model.
+Done: the page, Create and Save (2026-10-19), and the browser tests with a stand-in model; the
+desktop app and its check, and local models through the OpenAI-compatible API in place of Chrome's
+(2026-10-21).

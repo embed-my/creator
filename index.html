@@ -13,8 +13,9 @@
     <header class="bar">
       <h1>Embed My Creator</h1>
       <div class="bar-actions">
-        <!-- Shown by create.js where Chrome's on-device model is there or can be downloaded. -->
-        <button type="button" class="primary" id="create" hidden>Create from your text</button>
+        <!-- The model server and model Create asks: the Model dialog, model-dialog.js. -->
+        <button type="button" id="model" class="model-button">Model</button>
+        <button type="button" class="primary" id="create">Create from your text</button>
         <label class="button">Open a file<input type="file" id="file" accept=".h5p,application/zip" hidden /></label>
         <!-- For a file Create made: it exists only in this browser until it is saved. -->
         <a class="button" id="save" download hidden>Save</a>
@@ -23,13 +24,14 @@
 
     <main>
       <section class="home" id="home">
-        <p class="create-offer" id="create-offer" hidden>
-          <strong>No file yet?</strong> Paste your own text, and the AI model built into Chrome makes a
-          quiz, a true-or-false set, a gap text or flashcards from it, on this device.
+        <p class="create-offer" id="create-offer">
+          <strong>No file yet?</strong> Paste your own text, and a model on this computer makes a quiz, a
+          true-or-false set, a gap text or flashcards from it. Nothing is sent anywhere.
         </p>
         <p class="no-model" id="no-model" hidden>
-          Creating needs desktop Chrome 148 or later, on a computer that runs its built-in AI model. You
-          can still open and play <code>.h5p</code> files here.
+          Creating needs a model server on this computer, such as LM Studio, Ollama or Unsloth Studio,
+          with a model loaded. Start one, then choose it under Model. You can still open and play
+          <code>.h5p</code> files here.
         </p>
       </section>
       <h5p-player libraries="pack" resume="device" hidden></h5p-player>
@@ -40,8 +42,8 @@
     <dialog class="create-dialog" id="create-dialog" aria-labelledby="create-title">
       <form id="create-form">
         <h2 id="create-title">Create from your text</h2>
-        <p>Chrome's built-in model writes an H5P activity from your text, on this device. Nothing is
-          sent anywhere.</p>
+        <p>The model on this computer writes an H5P activity from your text. Nothing is sent
+          anywhere.</p>
         <label class="create-label" for="create-text">Your text</label>
         <textarea id="create-text" name="text" rows="8" maxlength="6000" required
           placeholder="A passage, your notes or a lesson summary: everything in the activity comes from it."></textarea>
@@ -63,7 +65,7 @@
               <option>10</option>
             </select>
           </label>
-          <!-- The Prompt API's languages. -->
+          <!-- The languages the authoring pack carries the content types' translations for. -->
           <label class="create-label">Language
             <select name="language">
               <option value="en">English</option>

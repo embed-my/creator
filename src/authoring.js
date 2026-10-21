@@ -1,7 +1,7 @@
 /**
- * Create's content, from what Chrome's on-device model answered (`create.js` asks it). The model
- * writes the words and nothing else: it answers a small JSON shape per kind of activity, held to
- * it by the Prompt API's `responseConstraint`, and this module puts those words into the content
+ * Create's content, from what the model on this computer answered (`create.js` asks it). The
+ * model writes the words and nothing else: it answers a small JSON shape per kind of activity, held
+ * to it by the server's `response_format`, and this module puts those words into the content
  * type's own structure. That structure comes from the sweep's `ContentGenerator`, from the pack's
  * `semantics.json`, so every field the content type reads is there with its default, the library
  * versions are the pack's, and the model never sees H5P's form definitions, which are long and
@@ -23,7 +23,7 @@ import { escapeHtml, stripMarkup } from './semantics/dialects.js'
 
 export { escapeHtml }
 
-/** The languages the Prompt API writes, by tag, as the instructions to the model name them. */
+/** The languages Create writes in, by tag, as the instructions to the model name them: those the authoring pack carries translations for. */
 export const LANGUAGES = { en: 'English', de: 'German', es: 'Spanish', fr: 'French', ja: 'Japanese' }
 
 /** How much of the teacher's text goes to the model: a small context window holds this and the answer. */

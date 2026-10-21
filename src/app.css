@@ -80,6 +80,26 @@ button:disabled {
   cursor: default;
 }
 
+/* The model chosen, in the bar: a long id is cut short; the full one is its title. */
+.model-button {
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A text field or a select across a dialog. */
+.field {
+  display: block;
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+}
+
 [hidden] {
   display: none !important;
 }

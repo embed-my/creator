@@ -34,8 +34,11 @@
 
     <main class="evals">
       <section>
-        <p class="create-note">Chrome's model gets a real outline, a real instruction and the <code>{ ops, reply }</code> schema, on real content. Judge each run and copy the table into the repository.</p>
-        <p class="no-model" id="no-model" hidden>No <code>LanguageModel</code> here: this needs desktop Chrome 148 or later with the built-in model.</p>
+        <p class="create-note">The model on this computer gets a real outline, a real instruction and the <code>{ changes, reply }</code> schema, on real content. Judge each run and copy the table into the repository.</p>
+        <div class="row">
+          <button type="button" id="model" class="model-button">Choose a model</button>
+          <span class="no-model create-note" id="no-model" hidden>No model server answers: start LM Studio, Ollama or Unsloth Studio with a model loaded.</span>
+        </div>
 
         <h2>Content</h2>
         <div class="row">
@@ -72,7 +75,7 @@
         </div>
         <table id="runs">
           <thead>
-            <tr><th>Sample</th><th>Task</th><th>Time</th><th>Quota</th><th>Changed</th><th>Refused</th><th>Format breaks</th><th>Schema</th><th>Verdict</th><th>Notes</th></tr>
+            <tr><th>Sample</th><th>Task</th><th>Model</th><th>Time</th><th>Quota</th><th>Changed</th><th>Refused</th><th>Format breaks</th><th>Schema</th><th>Verdict</th><th>Notes</th></tr>
           </thead>
           <tbody></tbody>
         </table>

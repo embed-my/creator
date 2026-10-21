@@ -7,7 +7,7 @@ import { BlobReader, Uint8ArrayWriter, ZipReader } from '@zip.js/zip.js'
  * The part of the library pack the app's Create needs (`src/authoring.js`): for each content type
  * it makes, and each it puts inside one, the newest library in the pack, with its `library.json`,
  * its `semantics.json`, and the library's own translations of those semantics in the languages
- * Chrome's model writes. Read from `@missing-elements/h5p-libraries`' `parts/` when the site is
+ * Create writes in. Read from `@missing-elements/h5p-libraries`' `parts/` when the site is
  * served or built (`authoringPackPlugin`), so the versions and defaults are those of the pack the
  * app plays with, and in Node by `tests/authoring.test.ts`.
  */
@@ -15,7 +15,7 @@ import { BlobReader, Uint8ArrayWriter, ZipReader } from '@zip.js/zip.js'
 /** The libraries whose content Create writes; `src/authoring.js` names each by machine name. */
 export const AUTHORING_LIBRARIES = ['H5P.QuestionSet', 'H5P.MultiChoice', 'H5P.TrueFalse', 'H5P.Blanks', 'H5P.Dialogcards']
 
-/** The Prompt API's output languages but English, whose strings are the semantics' own defaults. */
+/** Create's languages but English, whose strings are the semantics' own defaults. */
 export const AUTHORING_TRANSLATIONS = ['de', 'es', 'fr', 'ja']
 
 /** The installed pack's parts: one archive per library, and `index.json`. The tests play from it too. */

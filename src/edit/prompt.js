@@ -6,8 +6,8 @@
  * - The turn: the outline, every line naming its field's format, and the teacher's words.
  * - The schema (`editSchema`), per turn: the answer's shape with the outline's ids as the only
  *   keys and each value's type, so a wrong id or a "maybe" for a true/false field cannot be
- *   written. It is not sent to the model as text (`omitSchema`): the system prompt already says
- *   it in words, and the window is small.
+ *   written. The server holds the answer to it (`response_format`), and the system prompt says
+ *   the same in words, for the model.
  *
  * The chat's history is not sent: the content as it stands is the history.
  */
@@ -61,13 +61,6 @@ export function editSchema(byId) {
     required: ['changes', 'reply'],
     additionalProperties: false
   }
-}
-
-/** The same shape without the ids and types: for a browser whose model refuses the full schema. */
-export const LOOSE_EDIT_SCHEMA = {
-  type: 'object',
-  properties: { changes: { type: 'object' }, reply: STRING },
-  required: ['changes', 'reply']
 }
 
 function valueSchema(node) {

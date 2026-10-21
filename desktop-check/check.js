@@ -5,8 +5,9 @@
  *
  * 1. Where the page is: its address, a secure context, Service Workers, Tauri's bridge.
  * 2. The player plays a quiz as Create makes it: content only, the libraries from the pack.
- * 3. The model is asked for an edit through Tauri's HTTP client, from Rust; then the same request
- *    from the page's own `fetch`, which a server that sends no CORS headers refuses.
+ * 3. The model is asked for an edit through the app's own `model/openai.js`, which uses Tauri's
+ *    HTTP client, from Rust; then the same request from the page's own `fetch`, which a server
+ *    that sends no CORS headers refuses.
  * 4. The edit is applied and the edited file plays.
  *
  * `?llm=<base URL>&model=<id>&key=<key>&message=<words>` picks the server and the request; the
@@ -16,12 +17,12 @@
 import '@missing-elements/h5p-offline-player'
 import { pack } from '@missing-elements/h5p-libraries'
 import { runtime } from '@missing-elements/h5p-runtime'
-import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
 import authoringPack from 'virtual:h5p-authoring-pack'
 import { SAMPLES } from '../evals/tasks.js'
 import { contentFrom, packageFrom } from '../src/authoring.js'
 import { applyChanges } from '../src/edit/operations.js'
 import { editPrompt, editSchema, editSystem } from '../src/edit/prompt.js'
+import { session } from '../src/model/openai.js'
 import { withContent } from '../src/package/working-copy.js'
 import { contentModel } from '../src/semantics/content-model.js'
 import { outline } from '../src/semantics/outline.js'
@@ -111,12 +112,14 @@ async function check() {
   }
 
   let answer = null
+  const step = `The model answers through model/openai.js and Tauri's HTTP client (${llm}, ${model})`
   try {
-    const result = await ask(tauriFetch, body)
-    answer = result.answer?.choices?.[0]?.message?.content ?? null
-    report(`The model answers through Tauri's HTTP client (${llm}, ${model})`, result.status === 200 && Boolean(answer), { status: result.status, ms: result.ms, answer, usage: result.answer?.usage })
+    const started = performance.now()
+    const conversation = await session({ server: { name: 'The model server', url: `${llm}/v1`, model, key }, system: editSystem('en') })
+    answer = await conversation.prompt(editPrompt(text, message), { schema: editSchema(byId) })
+    report(step, true, { ms: Math.round(performance.now() - started), answer, quota: conversation.quota() })
   } catch (error) {
-    report(`The model answers through Tauri's HTTP client (${llm}, ${model})`, false, String(error))
+    report(step, false, `${error?.name}: ${error?.message}`)
   }
 
   try {
