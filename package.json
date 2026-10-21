@@ -17,14 +17,14 @@
   },
   "dependencies": {
     "@missing-elements/h5p-libraries": "^1.0.0",
-    "@missing-elements/h5p-offline-player": "^1.1.0",
+    "@missing-elements/h5p-offline-player": "^1.1.1",
     "@missing-elements/h5p-runtime": "^1.0.0",
     "@tauri-apps/api": "^2.12.4",
     "@tauri-apps/plugin-http": "^2.8.3",
     "@zip.js/zip.js": "^2.24.0"
   },
   "devDependencies": {
-    "@missing-elements/h5p-verify": "^1.0.0",
+    "@missing-elements/h5p-verify": "^1.1.0",
     "@playwright/test": "^1.64.1",
     "@tauri-apps/cli": "^2.12.3",
     "@types/node": "^26.6.5",
