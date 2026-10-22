@@ -274,7 +274,7 @@ describe('what a turn changed, and what it left behind', () => {
       {
         id: id(ANSWER(0, 1, 'chosenFeedback')),
         label: `Message displayed if answer is selected [${INLINE}]`,
-        problem: 'It still says "The moon moves tides, not vapour.", but the answer it belongs to now reads "Gravity". Write it again to fit that answer, or leave it out if it still fits.'
+        problem: 'It still says "The moon moves tides, not vapour.", but the answer it belongs to now reads "Gravity" (a wrong answer). Write it again so it says why that answer is wrong, or leave it out if it still fits.'
       }
     ])
     const prompt = fixPrompt([], stale)

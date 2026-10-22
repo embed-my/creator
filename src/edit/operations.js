@@ -73,16 +73,18 @@ export function changeNote(applied, byId) {
 }
 
 /** An answer's feedback and its tip: what is said about the answer, beside it in its list item. */
-const FEEDBACK = /feedback$|^tip$/i
+const FEEDBACK = /feedback|^tip$/i
 const isFeedback = (node) => FEEDBACK.test(String(node.path.at(-1)))
 const sameItem = (node, other) => Boolean(node.item && other.item) && node.item.join('.') === other.item.join('.')
 
 /**
  * Feedback a turn left behind: where an answer's words changed and the feedback beside it, which
  * has words, did not — "The moon moves tides, not vapour." under an answer now reading
- * "Gravity". The second try asks about each, with the answer as it now reads; the model writes
- * it again, or leaves it out where it still fits. A changed Correct is no reason: which answer
- * is right can change while what is said about each answer stays true.
+ * "Gravity". The second try asks about each, with the answer as it now reads and whether it is
+ * right or wrong: told only the answer, a model wrote "Pressure changes … drive evaporation."
+ * under the wrong answer "Atmospheric pressure". The model writes it again, or leaves it out
+ * where it still fits. A changed Correct is no reason: which answer is right can change while
+ * what is said about each answer stays true.
  * @param {{ id: string, to: any }[]} applied
  * @param {Map<string, import('../semantics/content-model.js').Node>} byId
  * @returns {{ id: string, label: string, problem: string }[]}
@@ -93,10 +95,13 @@ export function staleFeedback(applied, byId) {
   for (const change of applied) {
     const answer = byId.get(change.id)
     if (answer?.kind !== 'text' || !answer.item || isFeedback(answer)) continue
+    const correct = [...byId.values()].find((node) => node.kind === 'boolean' && String(node.path.at(-1)) === 'correct' && sameItem(node, answer))
+    const which = correct === undefined ? '' : correct.value ? ' (the right answer)' : ' (a wrong answer)'
+    const why = correct === undefined ? 'to fit that answer' : `so it says why that answer is ${correct.value ? 'right' : 'wrong'}`
     for (const [id, other] of byId) {
       if (changed.has(id) || stale.has(id) || other.kind !== 'text' || other.empty || !isFeedback(other) || !sameItem(answer, other)) continue
       const now = stripMarkup(String(change.to)).replace(/\s+/g, ' ').trim()
-      stale.set(id, { id, label: `${other.label} [${formatHint(other)}]`, problem: `It still says "${other.text}", but the answer it belongs to now reads "${now}". Write it again to fit that answer, or leave it out if it still fits.` })
+      stale.set(id, { id, label: `${other.label} [${formatHint(other)}]`, problem: `It still says "${other.text}", but the answer it belongs to now reads "${now}"${which}. Write it again ${why}, or leave it out if it still fits.` })
     }
   }
   return [...stale.values()]

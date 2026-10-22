@@ -51,6 +51,7 @@ describe('every task', () => {
       for (const sample of task.for) expect(SAMPLES, `${task.label}: ${sample}`).toHaveProperty(sample)
       expect(task.right, task.label).toBeTruthy()
       expect(task.checks.length, task.label).toBeGreaterThan(0)
+      expect(['checks', 'reading'], task.label).toContain(task.judged)
     }
   })
 })

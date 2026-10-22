@@ -135,16 +135,18 @@ src/
                       [html: the inline tags it allows] — and the check that refuses text
                       breaking it, with the rule; the Blanks dialect
   edit/               operations.js: { changes } applied with each field's checks, refusals by
-                      id and kind (id, format, value); prompt.js: the system prompt defining
-                      the formats, the turn, the fix round, and the per-turn schema
+                      id and kind (id, format, value), changeNote, staleFeedback; prompt.js: the
+                      system prompt defining the formats, the turn, the fix round, and the
+                      per-turn schema
   package/            read.js: h5p.json and content.json from a file; working-copy.js: the
                       edited file for the player, the original bytes referenced, not copied
 evals/                the editing spine against a real model, by hand: samples and tasks, each
                       from a use case (tasks.js), the outline, the raw answer, what was applied,
                       the automatic checks (checks.js), the time and the tokens, and a table of
                       runs to judge and copy into the repository (/evals/ in dev);
-                      RESULTS.md, the runs with real models, judged; runs/, every run's
-                      outline, answer, changes and checks
+                      RESULTS.md, the runs with real models, judged; RUBRIC.md, how a run
+                      is judged, by its checks or by reading; runs/, every run's outline,
+                      answer, changes, checks and verdict
 desktop-check/        the desktop check: where the page is, the player playing, a model asked
                       through Tauri's HTTP client and through the page's fetch, the edit played
 src-tauri/            the desktop app: the localhost plugin serving the built site, Tauri's HTTP
@@ -152,8 +154,13 @@ src-tauri/            the desktop app: the localhost plugin serving the built si
 scripts/
   local-model-stand-in.mjs  an OpenAI-compatible server with no CORS headers, for the check
   run-evals.mjs       the eval page's tasks run unattended against a model server, through the
-                      page in a headless Chromium: every run to evals/runs/*.json, and the
-                      table for evals/RESULTS.md; --thinking on|off asks for reasoning or none
+                      page in a headless Chromium: every run to evals/runs/*.json, with the
+                      sampling and the code it ran; --thinking on|off, --repeat,
+                      --temperature/--top-p/--top-k
+  blind-evals.mjs     blind judging: the runs judged by reading shuffled across run files into a
+                      pack for two judges, and their verdicts merged back, with their agreement
+  summarize-evals.mjs the tables for evals/RESULTS.md: verdicts per round, and per task across
+                      run files; the verdicts of runs judged by checks applied by rule
   authoring-pack.mjs  readAuthoringPack(): the newest of the five libraries in the pack, each with
                       library.json, semantics.json and language/{de,es,fr,ja}.json (137 kB raw),
                       from node_modules/@missing-elements/h5p-libraries/parts (PARTS_DIR);

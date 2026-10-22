@@ -175,11 +175,15 @@ const isTitle = (node) => node.path.at(-1) === 'title'
 
 /**
  * Each task: the use case it tests, the message, whether settings and empty slots are shown,
- * the samples it is for, what counts as right, and the checks.
+ * the samples it is for, what counts as right, the checks, and how a run is judged
+ * (`judged`): by its checks alone, where they say all that "right" asks, or by a person
+ * reading the words. A run judged by its checks passes when every check passes, is partial when
+ * one fails and something changed, and fails when nothing changed.
  */
 export const TASKS = [
   {
     label: 'Fix the spelling',
+    judged: 'checks',
     use: '#6',
     message: 'Fix the spelling mistakes.',
     for: ['quiz-en'],
@@ -188,6 +192,7 @@ export const TASKS = [
   },
   {
     label: 'Change the title',
+    judged: 'checks',
     use: '#6',
     message: 'Change the title to "Water on Earth".',
     for: ['quiz-en', 'true-false-de', 'cards-ja'],
@@ -196,6 +201,7 @@ export const TASKS = [
   },
   {
     label: 'Simpler reading level',
+    judged: 'reading',
     use: '#3',
     message: 'Rewrite all the text for 8-year-olds: short sentences and everyday words. Keep every fact, and keep which answers are right.',
     for: ['quiz-dense-en', 'true-false-de', 'blanks-en'],
@@ -204,6 +210,7 @@ export const TASKS = [
   },
   {
     label: 'Translate to German',
+    judged: 'reading',
     use: '#4',
     message: 'Translate everything into German.',
     for: ['quiz-en', 'blanks-en', 'cards-ja'],
@@ -212,6 +219,7 @@ export const TASKS = [
   },
   {
     label: 'Translate to English',
+    judged: 'reading',
     use: '#4',
     message: 'Translate everything into English.',
     for: ['true-false-de', 'cards-ja'],
@@ -220,6 +228,7 @@ export const TASKS = [
   },
   {
     label: 'Feedback for every answer',
+    judged: 'reading',
     use: '#5',
     message: 'Give every answer feedback that tells the student why it is right or wrong.',
     empty: true,
@@ -229,6 +238,7 @@ export const TASKS = [
   },
   {
     label: 'Better wrong answers',
+    judged: 'reading',
     use: '#8',
     message: 'The wrong answers are too easy to spot. Replace each wrong answer with one that students often believe, and keep the right answers as they are.',
     for: ['quiz-en', 'quiz-dense-en'],
@@ -237,6 +247,7 @@ export const TASKS = [
   },
   {
     label: 'Shorten the feedback',
+    judged: 'reading',
     use: '#5',
     message: 'Make every feedback at most six words.',
     for: ['quiz-en', 'true-false-de'],
@@ -245,6 +256,7 @@ export const TASKS = [
   },
   {
     label: 'Make question 2 harder',
+    judged: 'reading',
     use: '#7',
     message: 'Make question 2 harder.',
     for: ['quiz-en'],
@@ -259,6 +271,7 @@ export const TASKS = [
   },
   {
     label: 'Swap the correct answer',
+    judged: 'checks',
     use: '#6',
     message: 'In question 1, make "The moon" the correct answer and "The sun" wrong.',
     for: ['quiz-en'],
@@ -276,6 +289,7 @@ export const TASKS = [
   },
   {
     label: 'Pass percentage (settings)',
+    judged: 'checks',
     use: '#10',
     message: 'Set the pass percentage to 60.',
     settings: true,
@@ -285,6 +299,7 @@ export const TASKS = [
   },
   {
     label: 'Bold the key word',
+    judged: 'checks',
     use: '#6',
     message: 'Put the most important word of each question in bold.',
     for: ['quiz-en'],
@@ -306,6 +321,7 @@ export const TASKS = [
   },
   {
     label: 'Blanks: new sentence',
+    judged: 'reading',
     use: '#6',
     message: 'Replace the last sentence with one about rivers flowing to the sea, with "sea" as the blank.',
     for: ['blanks-en'],
