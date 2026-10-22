@@ -117,6 +117,18 @@ yet — is an **empty slot**: the outline shows it, as `""`, only when a turn as
 so that "give every answer feedback" has lines to fill and other turns are not tempted to fill
 them. A value written into one is wrapped as H5P's editor wraps the field.
 
+Empty slots and settings carry H5P's description of the field in parentheses after the label,
+as much of it as fits in about a line. Their labels alone do not tell them apart: a tip, a
+message when the answer is chosen and one when it is not are three empty slots side by side, and
+the quiz's pass percentage and each question's share a label though only the quiz's counts.
+Added on 2026-10-22 after the first runs with real models filled the wrong slots and set every
+pass percentage (`evals/RESULTS.md`). The author's words carry no note: the value says what the
+field is.
+
+The fix round also asks about feedback a turn left behind (`staleFeedback`): where an answer's
+words changed and the feedback beside it in its list item did not. Code, not the model's reply,
+says what a turn changed (`changeNote`), since a reply can claim a change that was not made.
+
 A field whose text carries meaning — `*blank*` in Fill in the Blanks, Drag Text and Mark the
 Words — has a **dialect** on top of its format, registered per library and field. Asterisks are
 not used by any format, so a blank never collides with bold.
@@ -223,9 +235,9 @@ cannot be edited.
 
 **Edit.** Message → focus → outline → prompt (system: the rules and the formats; user: the
 outline, each line with its format, and the message) → `{ changes, reply }` → `check` → on a
-violation, one fix round with the rule restated → operations
+violation or feedback left behind, one fix round with the rule restated → operations
 applied to a copy of the params → `withContent` → `player.file = copy` → the version and the
-reply saved → the chat shows the reply.
+reply saved → the chat shows what changed (`changeNote`) and the reply.
 
 **Create.** The dialog as today: the text, the kind, the count, the language → the recipe's
 shape → `contentFrom` → `packageFrom` → opened like any file, with history starting at it.

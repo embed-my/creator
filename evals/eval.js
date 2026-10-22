@@ -13,7 +13,10 @@
  * A text that breaks its field's format (HTML where the field is plain text, a tag the field
  * does not allow) is refused and counted in its own column, before the second try: whether the
  * model keeps to the formats it is told is one of the things measured, so nothing is cleaned
- * up behind it.
+ * up behind it. The second try also asks about feedback a changed answer left behind.
+ *
+ * The status says what changed in code's words before the model's reply, which can claim a
+ * change that was not made.
  */
 
 import '@missing-elements/h5p-offline-player'
@@ -21,7 +24,7 @@ import { pack } from '@missing-elements/h5p-libraries'
 import { runtime } from '@missing-elements/h5p-runtime'
 import authoringPack from 'virtual:h5p-authoring-pack'
 import { contentFrom, packageFrom } from '../src/authoring.js'
-import { applyChanges } from '../src/edit/operations.js'
+import { applyChanges, changeNote, staleFeedback } from '../src/edit/operations.js'
 import { editPrompt, editSchema, editSystem, fixPrompt } from '../src/edit/prompt.js'
 import { openModelDialog } from '../src/model-dialog.js'
 import { ModelError, session as modelSession } from '../src/model/openai.js'
@@ -160,10 +163,11 @@ async function run() {
     const parsed = parse(first.answer)
     let result = parsed ? applyChanges(current.params, parsed.changes, byId) : null
     const formatBreaks = result ? result.violations.filter((violation) => violation.kind === 'format').length : 0
+    const stale = result ? staleFeedback(result.applied, byId) : []
     let second = null
-    if (result && result.violations.length) {
-      say('Asking once more about the refused fields…')
-      second = await ask(conversation, fixPrompt(result.violations))
+    if (result && (result.violations.length || stale.length)) {
+      say(result.violations.length ? 'Asking once more about the refused fields…' : 'Asking once more about feedback the changed answers left behind…')
+      second = await ask(conversation, fixPrompt(result.violations, stale))
       const again = parse(second.answer)
       if (again) {
         const retried = applyChanges(result.params, again.changes, byId)
@@ -186,7 +190,7 @@ async function run() {
       }
       const checked = runChecks(before, contentModel(result.params, current.mainLibrary, authoringPack, current.language))
       for (const { name, result: outcome } of checked.results) $('#checks').append(item(outcome === true ? `✓ ${name}` : `✗ ${name}: ${outcome}`, outcome === true ? '' : 'violation'))
-      say(`${result.applied.length} field(s) changed, ${result.violations.length} refused, ${formatBreaks} format break(s) on the first try, checks ${checked.cell}, ${ms} ms. "${parsed.reply ?? ''}"`)
+      say(`${changeNote(result.applied, byId)} ${result.violations.length} refused, ${formatBreaks} format break(s) on the first try${stale.length ? `, ${stale.length} feedback(s) asked about again` : ''}, checks ${checked.cell}, ${ms} ms. The model says: "${parsed.reply ?? ''}"`)
       runs.push(row({ model: server.model, ms, quota, changed: result.applied.length, refused: result.violations.length, formatBreaks, schema: first.schema, tries: second ? 2 : 1, checks: checked.cell }))
     }
     renderRuns()

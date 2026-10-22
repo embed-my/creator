@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { verifyPackage, summarize } from '@missing-elements/h5p-verify'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { contentFrom, packageFrom } from '../src/authoring.js'
-import { applyChanges } from '../src/edit/operations.js'
+import { applyChanges, changeNote, staleFeedback } from '../src/edit/operations.js'
 import { editSchema, editSystem, fixPrompt } from '../src/edit/prompt.js'
 import { readPackage } from '../src/package/read.js'
 import { withContent } from '../src/package/working-copy.js'
@@ -91,13 +91,17 @@ describe('the outline', () => {
     expect(text).toContain('t3   Feedback on correct answer [text]: "Gravity pulls it down."')
   })
 
-  it('shows settings only when asked, with what they take', () => {
+  it('shows settings only when asked, with what they take and what H5P says they are for', () => {
     const content = quiz()
     expect(outlineOf(content).text).not.toContain('Pass percentage')
     const { text } = outlineOf(content, { settings: true })
-    expect(text).toContain('Pass percentage [number 0-100]: 50')
-    expect(text).toContain('Randomize questions [true/false]: false')
-    expect(text).toContain('Progress indicator [textual/dots]: dots')
+    // Two settings share a label; H5P's descriptions tell them apart.
+    expect(text).toContain('Pass percentage (Percentage of Total score required for passing the quiz.) [number 0-100]: 50')
+    expect(text).toContain("Pass percentage (This setting often won't have any effect.) [number 0-100]: 100")
+    expect(text).toContain('Randomize questions (Enable to randomize the order of questions on display.) [true/false]: false')
+    expect(text).toContain('Progress indicator (Question set progress indicator style. Will be Textual if backwards navigation is disabled.) [textual/dots]: dots')
+    // The author's words carry no note.
+    expect(text).toContain(`Title [${INLINE}]: "The water cycle"`)
   })
 
   it('names the blank of a Fill in the Blanks line as part of its format', () => {
@@ -244,6 +248,51 @@ describe('the edits', () => {
   })
 })
 
+describe('what a turn changed, and what it left behind', () => {
+  const ANSWER = (question: number, answer: number, field = 'text') => `questions.${question}.params.answers.${answer}.${field === 'text' ? 'text' : `tipsAndFeedback.${field}`}`
+
+  it('says what changed in code\'s words, whatever the reply says', () => {
+    const content = quiz()
+    const { byId } = outlineOf(content, { settings: true })
+    const id = (path: string) => [...byId].find(([, node]) => node.path.join('.') === path)![0]
+    expect(changeNote([], byId)).toBe('Nothing changed.')
+    // A model sending a field back as it was changes nothing, and the note says so.
+    expect(changeNote(applyChanges(content.params, { t1: 'The water cycle' }, byId).applied, byId)).toBe('Nothing changed.')
+    expect(changeNote(applyChanges(content.params, { t1: 'Water on Earth' }, byId).applied, byId)).toBe('Changed 1 of 10 text fields.')
+    const both = applyChanges(content.params, { t1: 'Water on Earth', [id('passPercentage')]: 60 }, byId).applied
+    expect(changeNote(both, byId)).toMatch(/^Changed 1 of 10 text fields and 1 of \d+ other fields\.$/)
+  })
+
+  it("finds an answer's feedback left as it was when the answer's words changed, and asks about it in the second try", () => {
+    const content = quiz()
+    const { byId } = outlineOf(content)
+    const id = (path: string) => [...byId].find(([, node]) => node.path.join('.') === path)![0]
+    const { applied } = applyChanges(content.params, { [id(ANSWER(0, 1))]: 'Gravity', [id(ANSWER(1, 1))]: 'Evaporation', [id(ANSWER(1, 1, 'chosenFeedback'))]: 'That is water leaving the surface.' }, byId)
+    const stale = staleFeedback(applied, byId)
+    // Question 2's changed answer came with new feedback; question 1's did not.
+    expect(stale).toEqual([
+      {
+        id: id(ANSWER(0, 1, 'chosenFeedback')),
+        label: `Message displayed if answer is selected [${INLINE}]`,
+        problem: 'It still says "The moon moves tides, not vapour.", but the answer it belongs to now reads "Gravity". Write it again to fit that answer, or leave it out if it still fits.'
+      }
+    ])
+    const prompt = fixPrompt([], stale)
+    expect(prompt).not.toContain('could not be used')
+    expect(prompt).toContain(`This feedback belongs to answers you changed, and may no longer fit them:\n- ${id(ANSWER(0, 1, 'chosenFeedback'))} Message displayed if answer is selected`)
+    expect(prompt).toMatch(/Answer again with only those fields/)
+  })
+
+  it('leaves alone feedback whose answer changed only which is right, or whose question changed', () => {
+    const content = quiz()
+    const { byId } = outlineOf(content)
+    const id = (path: string) => [...byId].find(([, node]) => node.path.join('.') === path)![0]
+    const { applied } = applyChanges(content.params, { [id('questions.0.params.answers.0.correct')]: false, [id('questions.0.params.answers.1.correct')]: true, [id('questions.0.params.question')]: 'What powers evaporation?' }, byId)
+    expect(applied).toHaveLength(3)
+    expect(staleFeedback(applied, byId)).toEqual([])
+  })
+})
+
 describe('the working copy and the package', () => {
   it('reads what Create wrote, and plays an edit untrusted with the content check changing nothing', async () => {
     const content = quiz()
@@ -280,8 +329,10 @@ describe('empty slots', () => {
     const { text, byId } = outlineOf(content, { empty: true })
     const slot = [...byId.values()].find((node) => node.path.join('.') === FEEDBACK(1, 0))
     expect(slot).toMatchObject({ empty: true, text: '', label: 'Message displayed if answer is selected' })
-    expect(text).toMatch(/Message displayed if answer is selected \[html: strong em sub sup code\]: ""/)
-    expect(text).toMatch(/Tip text \[html: strong em code\]: ""/)
+    // Three slots side by side, each with what H5P says it is for; a filled one needs no note.
+    expect(text).toContain('Message displayed if answer is selected (Message will appear below the answer on "check" if this answer is selected.) [html: strong em sub sup code]: ""')
+    expect(text).toContain('Tip text (Hint for the user. This will appear before user checks his answer/answers.) [html: strong em code]: ""')
+    expect(text).toContain('Message displayed if answer is selected [html: strong em sub sup code]: "That is how clouds form."')
     // A filled field is no slot, and a flashcard's image alt text, with no image, is none either.
     expect([...byId.values()].find((node) => node.path.join('.') === FEEDBACK(0, 0))?.empty).toBeUndefined()
     const cards = contentFrom('cards', { title: 'Terms', cards: [{ front: 'Evaporation', back: 'Water turning into vapour.' }] }, { pack })

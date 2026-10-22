@@ -5,6 +5,10 @@
  * refuses what the field refuses, with the rule restated, so the model can be asked once more.
  * Nothing that breaks a format is cleaned and applied: it is refused, and the refusal says why.
  * The parameters are not changed; a copy comes back with the applied edits.
+ *
+ * Code also says what a turn changed (`changeNote`), since a model's reply can claim a change
+ * it did not make, and finds feedback a changed answer left behind (`staleFeedback`), which the
+ * second try asks about with the refusals.
  */
 
 import { checkModelText, escapeHtml, stripMarkup, toHtml } from '../semantics/dialects.js'
@@ -50,6 +54,52 @@ export function applyChanges(params, changes, byId) {
     applied.push({ id, label: node.label, from: node.value ?? '', to: read.value })
   }
   return { params: next, applied, violations }
+}
+
+/**
+ * What a turn changed, said by code beside the model's reply: "Nothing changed.", "Changed 3 of
+ * 20 text fields." A reply said "I translated all …" over a title alone.
+ * @param {{ id: string }[]} applied
+ * @param {Map<string, import('../semantics/content-model.js').Node>} byId
+ */
+export function changeNote(applied, byId) {
+  if (!applied.length) return 'Nothing changed.'
+  const nodes = [...byId.values()]
+  const texts = applied.filter((change) => byId.get(change.id)?.kind === 'text').length
+  const parts = []
+  if (texts) parts.push(`${texts} of ${nodes.filter((node) => node.kind === 'text').length} text fields`)
+  if (applied.length > texts) parts.push(`${applied.length - texts} of ${nodes.filter((node) => node.kind !== 'text').length} other fields`)
+  return `Changed ${parts.join(' and ')}.`
+}
+
+/** An answer's feedback and its tip: what is said about the answer, beside it in its list item. */
+const FEEDBACK = /feedback$|^tip$/i
+const isFeedback = (node) => FEEDBACK.test(String(node.path.at(-1)))
+const sameItem = (node, other) => Boolean(node.item && other.item) && node.item.join('.') === other.item.join('.')
+
+/**
+ * Feedback a turn left behind: where an answer's words changed and the feedback beside it, which
+ * has words, did not — "The moon moves tides, not vapour." under an answer now reading
+ * "Gravity". The second try asks about each, with the answer as it now reads; the model writes
+ * it again, or leaves it out where it still fits. A changed Correct is no reason: which answer
+ * is right can change while what is said about each answer stays true.
+ * @param {{ id: string, to: any }[]} applied
+ * @param {Map<string, import('../semantics/content-model.js').Node>} byId
+ * @returns {{ id: string, label: string, problem: string }[]}
+ */
+export function staleFeedback(applied, byId) {
+  const changed = new Set(applied.map((change) => change.id))
+  const stale = new Map()
+  for (const change of applied) {
+    const answer = byId.get(change.id)
+    if (answer?.kind !== 'text' || !answer.item || isFeedback(answer)) continue
+    for (const [id, other] of byId) {
+      if (changed.has(id) || stale.has(id) || other.kind !== 'text' || other.empty || !isFeedback(other) || !sameItem(answer, other)) continue
+      const now = stripMarkup(String(change.to)).replace(/\s+/g, ' ').trim()
+      stale.set(id, { id, label: `${other.label} [${formatHint(other)}]`, problem: `It still says "${other.text}", but the answer it belongs to now reads "${now}". Write it again to fit that answer, or leave it out if it still fits.` })
+    }
+  }
+  return [...stale.values()]
 }
 
 /**

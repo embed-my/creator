@@ -219,10 +219,11 @@ That file is GPL and the published runtime has only `dist/`, so it is not used h
 
 1. **What the first real runs found** (`evals/RESULTS.md`, 2026-10-22). Gemma 4 E4B with thinking
    on got 15 of 23 runs right, at a median of 20 s. Without thinking, models fail a third. Qwen3.5
-   4B thinks for minutes per edit. Fix what the runs point to, then run again:
-   - H5P's field descriptions in the outline, for empty slots and settings;
-   - the app sending `reasoning_effort` itself, and saying what actually changed;
-   - a second round when a changed answer keeps its old feedback;
+   4B thinks for minutes per edit. Done on 2026-10-22, not yet measured: H5P's field descriptions
+   in the outline for empty slots and settings, `changeNote` (what a turn changed, in code's
+   words), and the second try asking about feedback a changed answer left behind. Next, run
+   Gemma again and compare; then:
+   - the app sending `reasoning_effort` itself;
    - "Shorten the feedback" on `quiz-dense-en`.
 
    Still to try: a model of about 9B (only with the owner's go-ahead: it is slow on 16 GB), LM

@@ -4,6 +4,8 @@
  * - The system prompt, once per session: the task, what each format in the outline means —
  *   where HTML may go and which tags, where it may not — and the shape of the answer.
  * - The turn: the outline, every line naming its field's format, and the teacher's words.
+ * - The second try (`fixPrompt`), at most one: the refused fields with the rules they broke, and
+ *   the feedback a changed answer left behind.
  * - The schema (`editSchema`), per turn: the answer's shape with the outline's ids as the only
  *   keys and each value's type, so a wrong id or a "maybe" for a true/false field cannot be
  *   written. The server holds the answer to it (`response_format`), and the system prompt says
@@ -22,6 +24,7 @@ export function editSystem(language = 'en') {
     'The activity is a list of fields, one per line, like this:',
     't7 Question [html: strong em]: "What is rain called in science?"',
     'Here t7 is the id, Question is the field\'s name, [html: strong em] is its format, and the text in quotation marks is its current value.',
+    'A note in parentheses after a field\'s name says what the field is for and when the learner sees it. Read it before you choose which field to change.',
     '',
     'What each format allows:',
     '- [text]: plain text only. No HTML tags, no markdown, no headings.',
@@ -77,8 +80,16 @@ function valueSchema(node) {
   }
 }
 
-/** The second try: each refused field with its name, its format and the rule it broke. */
-export function fixPrompt(violations) {
-  const lines = violations.map(({ id, label, problem }) => `- ${id}${label ? ` ${label}` : ''}: ${problem}`).join('\n')
-  return `These changes could not be used:\n${lines}\n\nAnswer again with only those fields, keeping to each field's format.`
+/**
+ * The second try: each refused field with its name, its format and the rule it broke, and each
+ * feedback a changed answer left behind (`staleFeedback`), with the answer as it now reads.
+ * @param {{ id: string, label: string, problem: string }[]} violations
+ * @param {{ id: string, label: string, problem: string }[]} [stale]
+ */
+export function fixPrompt(violations, stale = []) {
+  const list = (entries) => entries.map(({ id, label, problem }) => `- ${id}${label ? ` ${label}` : ''}: ${problem}`).join('\n')
+  const parts = []
+  if (violations.length) parts.push(`These changes could not be used:\n${list(violations)}`)
+  if (stale.length) parts.push(`This feedback belongs to answers you changed, and may no longer fit them:\n${list(stale)}`)
+  return `${parts.join('\n\n')}\n\nAnswer again with only those fields, keeping to each field's format.`
 }

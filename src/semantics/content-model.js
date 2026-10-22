@@ -34,6 +34,8 @@ import { dialectFor, formatOf, toModel } from './dialects.js'
  * @property {import('./dialects.js').Format} [format] a text node's format: where the model may write HTML
  * @property {boolean} [content] whether the node is the author's content rather than a setting
  * @property {boolean} [empty] an empty text field the author could fill: an answer's feedback, its tip
+ * @property {(string | number)[]} [item] the list item the node is in, within its library: an answer's
+ *   text and its feedback share one; a sub-content's own fields are in none
  * @property {(string | number)[]} [titleOf] for a sub-content's question: the sub-content whose title follows it
  */
 
@@ -49,7 +51,7 @@ export function contentModel(params, mainLibrary, pack, language = 'en') {
   const entry = libraryEntry(generator, mainLibrary)
   if (!entry) throw new Error(`The pack has no ${mainLibrary}`)
   const walk = new Walk(generator)
-  walk.fields(entry.semantics, params, [], { library: entry.library.machineName, fieldPath: '', depth: 0, inItem: false, sub: null, heading: null })
+  walk.fields(entry.semantics, params, [], { library: entry.library.machineName, fieldPath: '', depth: 0, inItem: false, item: null, sub: null, heading: null })
   return walk.nodes
 }
 
@@ -102,7 +104,7 @@ class Walk {
         value.forEach((item, index) => {
           const heading = { kind: 'item', path: [...path, index], label: `${capitalize(entity)} ${index + 1}`, depth: ctx.depth, library: ctx.library }
           const from = this.nodes.push(heading) - 1
-          this.field(field.field, item, [...path, index], { ...ctx, fieldPath: `${ctx.fieldPath}[].${field.field.name}`, depth: ctx.depth + 1, inItem: true, heading })
+          this.field(field.field, item, [...path, index], { ...ctx, fieldPath: `${ctx.fieldPath}[].${field.field.name}`, depth: ctx.depth + 1, inItem: true, item: [...path, index], heading })
           // An item with no words of its own — a default score range, an empty tip — is nothing to edit.
           if (!this.nodes.slice(from + 1).some((node) => node.kind === 'text' && !node.empty)) this.nodes.length = from
         })
@@ -117,7 +119,7 @@ class Walk {
         }
         if (ctx.heading) ctx.heading.label += ` (${entry.library.title})`
         // A sub-content's own settings are settings, though the sub-content sits in a list.
-        return this.fields(entry.semantics, value.params, [...path, 'params'], { ...ctx, library: entry.library.machineName, fieldPath: '', sub: path, inItem: false })
+        return this.fields(entry.semantics, value.params, [...path, 'params'], { ...ctx, library: entry.library.machineName, fieldPath: '', sub: path, inItem: false, item: null })
       }
       case 'text':
       case 'number':
@@ -133,7 +135,7 @@ class Walk {
     const html = field.type === 'text' && Array.isArray(field.tags)
     const dialect = dialectFor(ctx.library, ctx.fieldPath)
     /** @type {Node} */
-    const node = { kind: field.type, path, label: field.label ?? field.name, depth: ctx.depth, library: ctx.library, field, value, html, dialect, content: false }
+    const node = { kind: field.type, path, label: field.label ?? field.name, depth: ctx.depth, library: ctx.library, field, value, html, dialect, content: false, ...(ctx.item ? { item: ctx.item } : {}) }
     if (field.type === 'text') {
       const format = formatOf(field, dialect)
       if (typeof value !== 'string' || !value.trim()) {

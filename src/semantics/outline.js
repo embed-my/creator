@@ -9,6 +9,12 @@
  * small. Empty slots — an answer's feedback or tip not written yet — are left out too, unless a
  * turn asks for them (`empty`), as one that asks for feedback on every answer does.
  *
+ * An empty slot and a setting carry H5P's description of the field, in parentheses after its
+ * label: their labels alone do not tell them apart. A tip, a message when the answer is chosen
+ * and one when it is not are three empty slots side by side, and a quiz's pass percentage and
+ * each question's share a label though only the quiz's counts. The author's words need no note:
+ * the value says what the field is.
+ *
  *   t1 Title [html: strong em sub sup code]: "The water cycle"
  *   Question 1 (Multiple Choice)
  *   t2   Question [html: strong em sub sup code]: "What drives evaporation?"
@@ -16,6 +22,7 @@
  *   t3     Text [html: strong em sub sup code]: "The sun"
  *   s1     Correct [true/false]: true
  *   t4     Feedback on wrong answer [text]: "Gravity pulls it down."
+ *   t5     Tip text (Hint for the user. This will appear before user checks his answer/answers.) [html: strong em code]: ""
  */
 
 import { describeFormat } from './dialects.js'
@@ -45,9 +52,28 @@ export function outline(nodes, { settings = false, empty = false } = {}) {
   return { text: lines.join('\n'), byId }
 }
 
-/** One field's line: its id, its label, its format and its value. */
+/** One field's line: its id, its label, a note for an empty slot or a setting, its format and its value. */
 export function lineFor(id, node, indent = '') {
-  return `${id} ${indent}${node.label} [${formatHint(node)}]: ${shown(node)}`
+  const about = node.empty || !node.content ? note(node.field) : ''
+  return `${id} ${indent}${node.label}${about ? ` (${about})` : ''} [${formatHint(node)}]: ${shown(node)}`
+}
+
+/**
+ * What H5P says a field is for: its description without markup, as many whole sentences as fit
+ * in about a line, and the first one at least — "This setting often won't have any effect."
+ */
+export function note(field) {
+  const text = String(field?.description ?? '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  let said = ''
+  for (const sentence of text.match(/[^.!?]+(?:[.!?]+|$)/g) ?? []) {
+    if (said && said.length + sentence.length > 120) break
+    said += sentence
+  }
+  said = said.trim()
+  return said.length > 200 ? `${said.slice(0, 199)}…` : said
 }
 
 /** What a field takes: its text format, or the kind of value, as the answer's schema has it. */

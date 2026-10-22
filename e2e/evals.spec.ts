@@ -35,7 +35,7 @@ test('a run edits the outline, plays the result and logs the run', async ({ page
 
   await page.getByRole('button', { name: 'Run' }).click()
   // The <h1> is refused and counted, and the second try is applied.
-  await expect(page.getByRole('status')).toContainText('1 field(s) changed, 0 refused, 1 format break(s) on the first try')
+  await expect(page.getByRole('status')).toContainText('Changed 1 of 20 text fields. 0 refused, 1 format break(s) on the first try')
   await expect(outline).toContainText('t1 Title [html: strong em sub sup code]: "EDITED The water cycle"')
   await expect(page.locator('#applied li')).toHaveText(['t1 Title: The water cycle → EDITED The water cycle'])
   await expect(page.locator('#runs tbody tr')).toHaveCount(1)
