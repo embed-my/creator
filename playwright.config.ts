@@ -2,7 +2,8 @@ import { defineConfig, devices } from '@playwright/test'
 
 /*
  * The browser tests run against the built site. Run `pnpm build` first; `pnpm e2e` then starts the
- * preview server. Chrome's model is a stand-in, added by each test, so Create runs in every engine.
+ * preview server. The model server is a stand-in (model-server.ts), added by each test, so Create
+ * runs in every engine.
  */
 export default defineConfig({
   testDir: 'e2e',

@@ -142,13 +142,18 @@ src/
 evals/                the editing spine against a real model, by hand: samples and tasks, each
                       from a use case (tasks.js), the outline, the raw answer, what was applied,
                       the automatic checks (checks.js), the time and the tokens, and a table of
-                      runs to judge and copy into the repository (/evals/ in dev)
+                      runs to judge and copy into the repository (/evals/ in dev);
+                      RESULTS.md, the runs with real models, judged; runs/, every run's
+                      outline, answer, changes and checks
 desktop-check/        the desktop check: where the page is, the player playing, a model asked
                       through Tauri's HTTP client and through the page's fetch, the edit played
 src-tauri/            the desktop app: the localhost plugin serving the built site, Tauri's HTTP
                       client allowed to localhost; the window made in lib.rs
 scripts/
   local-model-stand-in.mjs  an OpenAI-compatible server with no CORS headers, for the check
+  run-evals.mjs       the eval page's tasks run unattended against a model server, through the
+                      page in a headless Chromium: every run to evals/runs/*.json, and the
+                      table for evals/RESULTS.md; --thinking on|off asks for reasoning or none
   authoring-pack.mjs  readAuthoringPack(): the newest of the five libraries in the pack, each with
                       library.json, semantics.json and language/{de,es,fr,ja}.json (137 kB raw),
                       from node_modules/@missing-elements/h5p-libraries/parts (PARTS_DIR);
@@ -212,12 +217,17 @@ That file is GPL and the published runtime has only `dist/`, so it is not used h
 
 ## Left to do
 
-1. **Prove the bet with real models.** Run the eval page's thirteen tasks, each on the samples it
-   is for, with two or three local models — Gemma 4 E4B, a Qwen3.5 of 4B, one of about 9B — judge
-   each run, and put the copied table in `evals/RESULTS.md` with the date, the server, each model
-   and its quantisation, and the machine. Speed, tokens, the checks, whether the answer holds to
-   the schema and the ids, and quality in German and Japanese are what to measure. Run Create once
-   per model too, and give Create an eval mode of its own (USE-CASES.md, #1–#2).
+1. **What the first real runs found** (`evals/RESULTS.md`, 2026-10-22). Gemma 4 E4B with thinking
+   on got 15 of 23 runs right, at a median of 20 s. Without thinking, models fail a third. Qwen3.5
+   4B thinks for minutes per edit. Fix what the runs point to, then run again:
+   - H5P's field descriptions in the outline, for empty slots and settings;
+   - the app sending `reasoning_effort` itself, and saying what actually changed;
+   - a second round when a changed answer keeps its old feedback;
+   - "Shorten the feedback" on `quiz-dense-en`.
+
+   Still to try: a model of about 9B (only with the owner's go-ahead: it is slow on 16 GB), LM
+   Studio and Ollama. Then run Create once per model and give Create an eval mode of its own
+   (USE-CASES.md, #1–#2).
 2. **The rest of the first slice** (ARCHITECTURE.md, decision log): `semantics/classify` and
    the semantics of all 55 libraries, `insert`/`remove`/`move` for lists with recipes,
    `history`, the export with the pack's libraries, and the chat in `app/` in place of the
