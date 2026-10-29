@@ -171,8 +171,7 @@ scripts/
 tests/                Vitest: authoring.test.ts (Create, played by h5p-verify), edit.test.ts (the
                       editing spine, empty slots played), checks.test.ts (the eval tasks'
                       checks on good and bad runs), model.test.ts (model/openai.js against a
-                      fake fetch);
-                      h5p-verify.d.ts, types for the part of h5p-verify the tests use
+                      fake fetch)
 e2e/                  Playwright, against the built site: create.spec.ts, evals.spec.ts, and
                       model-server.ts, the stand-in server on LM Studio's port
 ```
