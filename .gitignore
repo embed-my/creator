@@ -9,3 +9,6 @@ dist/
 # Playwright
 test-results/
 playwright-report/
+
+# Notes, kept locally
+notes/
