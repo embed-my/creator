@@ -209,7 +209,7 @@ function table() {
 }
 
 /** What a run runs: the app's code, the eval page, this script and the packages; not notes or runs. */
-const RUN_FILES = ['src', 'evals', 'index.html', 'vite.config.ts', 'package.json', 'pnpm-lock.yaml', 'scripts/run-evals.mjs', 'scripts/authoring-pack.mjs', 'scripts/sweep-content.mjs', ':!evals/runs', ':!*.md']
+const RUN_FILES = ['src', 'evals', 'index.html', 'vite.config.ts', 'package.json', 'pnpm-lock.yaml', 'scripts/run-evals.mjs', ':!evals/runs', ':!*.md']
 
 /**
  * The code a run ran: the commit, the files it runs that changed since, and a hash of those

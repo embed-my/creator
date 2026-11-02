@@ -1,6 +1,7 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { openPack } from '@missing-elements/h5p-author'
 import { verifyPackage, summarize } from '@missing-elements/h5p-verify'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { contentFrom, packageFrom } from '../src/authoring.js'
@@ -10,8 +11,9 @@ import { readPackage } from '../src/package/read.js'
 import { withContent } from '../src/package/working-copy.js'
 import { contentModel, editable } from '../src/semantics/content-model.js'
 import { checkModelText, describeFormat, formatOf, stripMarkup, toHtml, toModel } from '../src/semantics/dialects.js'
+import { editorLibraries, labelled } from '../src/semantics/libraries.js'
 import { outline } from '../src/semantics/outline.js'
-import { PARTS_DIR, readAuthoringPack } from '../scripts/authoring-pack.mjs'
+import { PARTS_DIR } from '../scripts/pack-parts.mjs'
 
 /**
  * The editing spine, without a model: content read into the outline the model sees, every field
@@ -20,16 +22,17 @@ import { PARTS_DIR, readAuthoringPack } from '../scripts/authoring-pack.mjs'
  * nothing, as a site would play it.
  */
 
-type Pack = Awaited<ReturnType<typeof readAuthoringPack>>
+type Pack = Awaited<ReturnType<typeof openPack>>
 let pack: Pack
 let dir: string
 
 beforeAll(async () => {
-  pack = await readAuthoringPack()
+  pack = await openPack()
   dir = await mkdtemp(join(tmpdir(), 'h5p-edit-'))
 })
 
 afterAll(async () => {
+  await pack?.close()
   await rm(dir, { recursive: true, force: true })
 })
 
@@ -47,14 +50,21 @@ const QUIZ = {
   ]
 }
 
-const quiz = () => contentFrom('quiz', QUIZ, { pack, language: 'en' })
-const main = (content: ReturnType<typeof contentFrom>) => `${content.manifest.mainLibrary} ${content.manifest.preloadedDependencies[0].majorVersion}.${content.manifest.preloadedDependencies[0].minorVersion}`
-const outlineOf = (content: ReturnType<typeof contentFrom>, options = {}) => outline(contentModel(content.params, main(content), pack, content.manifest.language), options)
+type Content = Awaited<ReturnType<typeof contentFrom>>
+type Made = Content & { libraries: Awaited<ReturnType<typeof editorLibraries>>['entries'] }
+const main = (content: Content) => `${content.manifest.mainLibrary} ${content.manifest.preloadedDependencies[0].majorVersion}.${content.manifest.preloadedDependencies[0].minorVersion}`
+/** Content as Create makes it, with its libraries loaded as the editor reads them. */
+async function made(kind: string, answer: unknown, language = 'en'): Promise<Made> {
+  const content = await contentFrom(kind, answer, { pack, language })
+  return { ...content, libraries: (await editorLibraries(pack, { type: main(content), language, params: content.params })).entries }
+}
+const quiz = () => made('quiz', QUIZ)
+const outlineOf = (content: Made, options = {}) => outline(contentModel(content.params, main(content), content.libraries), options)
 const INLINE = 'html: strong em sub sup code'
 
 describe('the outline', () => {
-  it("lists the author's words, each with its field's format, and nothing of the library's own", () => {
-    const { text, byId } = outlineOf(quiz())
+  it("lists the author's words, each with its field's format, and nothing of the library's own", async () => {
+    const { text, byId } = outlineOf(await quiz())
     expect(text).toBe(
       [
         `t1 Title [${INLINE}]: "The water cycle"`,
@@ -83,16 +93,16 @@ describe('the outline', () => {
     expect(byId.get('t4')!.path).toEqual(['questions', 0, 'params', 'answers', 0, 'tipsAndFeedback', 'chosenFeedback'])
   })
 
-  it('says where a field is plain text: True/False feedback has no tags', () => {
-    const content = contentFrom('true-false', { title: 'Clouds', statements: [{ statement: 'Rain falls upwards.', isTrue: false, explanation: 'Gravity pulls it down.' }] }, { pack })
+  it('says where a field is plain text: True/False feedback has no tags', async () => {
+    const content = await made('true-false', { title: 'Clouds', statements: [{ statement: 'Rain falls upwards.', isTrue: false, explanation: 'Gravity pulls it down.' }] })
     const { text } = outlineOf(content)
     expect(text).toContain(`t2   Question [${INLINE}]: "Rain falls upwards."`)
     expect(text).toContain('s1   Correct answer [true/false]: false')
     expect(text).toContain('t3   Feedback on correct answer [text]: "Gravity pulls it down."')
   })
 
-  it('shows settings only when asked, with what they take and what H5P says they are for', () => {
-    const content = quiz()
+  it('shows settings only when asked, with what they take and what H5P says they are for', async () => {
+    const content = await quiz()
     expect(outlineOf(content).text).not.toContain('Pass percentage')
     const { text } = outlineOf(content, { settings: true })
     // Two settings share a label; H5P's descriptions tell them apart.
@@ -104,21 +114,30 @@ describe('the outline', () => {
     expect(text).toContain(`Title [${INLINE}]: "The water cycle"`)
   })
 
-  it('names the blank of a Fill in the Blanks line as part of its format', () => {
-    const content = contentFrom('blanks', { title: 'Words', sentences: [{ sentence: 'Evaporation is driven by the Sun.', answer: 'Sun' }] }, { pack })
+  it('names the blank of a Fill in the Blanks line as part of its format', async () => {
+    const content = await made('blanks', { title: 'Words', sentences: [{ sentence: 'Evaporation is driven by the Sun.', answer: 'Sun' }] })
     const { text } = outlineOf(content)
     expect(text).toContain('t1   Line of text [html: strong em u del code; blank: *word*]: "Evaporation is driven by the *Sun*."')
     // The task description is the library's default: not the author's, not shown.
     expect(text).not.toContain('Fill in the missing words')
   })
 
-  it("says which content it can edit: the pack's libraries", () => {
-    const content = quiz()
-    expect(editable(content.params, main(content), pack)).toBe(true)
-    expect(editable(content.params, 'H5P.Nowhere 1.0', pack)).toBe(false)
+  it("lays a library's translation over its labels as the editor does, and leaves the defaults the loader's", () => {
+    const semantics = [{ name: 'a', type: 'text', default: 'Check', label: 'A' }, { name: 'b', type: 'group', label: 'B', fields: [{ name: 'c', type: 'text', default: 'Retry' }] }]
+    const out = labelled(semantics, [{ default: 'Prüfen', label: 'Ä' }, { label: 'Gruppe', fields: [{ default: 'Wiederholen', description: 'Erneut' }] }])
+    expect(out).toEqual([{ name: 'a', type: 'text', default: 'Check', label: 'Ä' }, { name: 'b', type: 'group', label: 'Gruppe', fields: [{ name: 'c', type: 'text', default: 'Retry', description: 'Erneut' }] }])
+    // Untouched where the translation says nothing, or something of another kind.
+    expect(labelled(semantics, undefined)).toBe(semantics)
+    expect(labelled([{ label: 3 }], [{ label: 'three' }])).toEqual([{ label: 3 }])
+  })
+
+  it("says which content it can edit: the pack's libraries", async () => {
+    const content = await quiz()
+    expect(editable(content.params, main(content), content.libraries)).toBe(true)
+    expect(editable(content.params, 'H5P.Nowhere 1.0', content.libraries)).toBe(false)
     const foreign = structuredClone(content.params)
     foreign.questions[0].library = 'H5P.Custom 1.0'
-    expect(editable(foreign, main(content), pack)).toBe(false)
+    expect(editable(foreign, main(content), content.libraries)).toBe(false)
   })
 })
 
@@ -127,13 +146,13 @@ describe('the formats', () => {
   const rich = formatOf({ type: 'text', tags: ['strong', 'em', 'sub', 'sup', 'h2', 'a', 'p'] })
   const blanks = formatOf({ type: 'text', tags: ['strong', 'em', 'u', 'del', 'code'] }, 'blanks')
 
-  it("come from the field's own tags: inline ones only", () => {
+  it("come from the field's own tags: inline ones only", async () => {
     expect(describeFormat(plain)).toBe('text')
     expect(describeFormat(rich)).toBe('html: strong em sub sup')
     expect(describeFormat(blanks)).toBe('html: strong em u del code; blank: *word*')
   })
 
-  it('accept text that keeps to them', () => {
+  it('accept text that keeps to them', async () => {
     expect(checkModelText('Water on Earth', plain)).toEqual({ text: 'Water on Earth' })
     expect(checkModelText('What <strong>drives</strong> H<sub>2</sub>O?', rich)).toEqual({ text: 'What <strong>drives</strong> H<sub>2</sub>O?' })
     // A model's <b> is taken as the <strong> it means; a bare "<" is text.
@@ -141,7 +160,7 @@ describe('the formats', () => {
     expect(checkModelText('Stars <em>shine</em> at *night*.', blanks)).toEqual({ text: 'Stars <em>shine</em> at *night*.' })
   })
 
-  it('refuse text that breaks them, saying which rule', () => {
+  it('refuse text that breaks them, saying which rule', async () => {
     expect(checkModelText('<h1>Water on Earth</h1>', plain)).toEqual({ problem: 'This field is plain text: write it without HTML tags such as <h1>.' })
     expect(checkModelText('<h1>Water on Earth</h1>', rich)).toEqual({ problem: 'Do not wrap the text in <h1>: paragraphs are added for you. Start a new paragraph with an empty line.' })
     expect(checkModelText('<p>What drives it?</p>', rich)).toMatchObject({ problem: expect.stringContaining('Do not wrap the text in <p>') })
@@ -153,52 +172,52 @@ describe('the formats', () => {
     expect(checkModelText('  ', plain)).toEqual({ problem: 'The text is empty.' })
   })
 
-  it('write checked text as the field holds it, wrapped as before', () => {
+  it('write checked text as the field holds it, wrapped as before', async () => {
     expect(toHtml('A <b>bold</b> & <em>soft</em> word', rich, '<p style="text-align: center;">x</p>')).toBe('<p style="text-align: center;">A <strong>bold</strong> &amp; <em>soft</em> word</p>')
     expect(toHtml('One\ntwo\n\nThree', rich, '<div>x</div>')).toBe('<div>One<br>two</div><div>Three</div>')
     expect(toHtml("Plain 'text' & 5 < 7", plain)).toBe('Plain &#039;text&#039; &amp; 5 &lt; 7')
   })
 
-  it('read a value back in the same format the model writes it', () => {
+  it('read a value back in the same format the model writes it', async () => {
     expect(toModel('<p>A <strong>bold</strong> &amp; <span style="x">plain</span> word</p><p>Next</p>', rich)).toBe('A <strong>bold</strong> & plain word\n\nNext')
     expect(toModel('<p>A <strong>bold</strong> word</p>', plain)).toBe('<p>A <strong>bold</strong> word</p>')
     expect(toModel('Fish &amp; chips &#039;n&#039; peas', plain)).toBe("Fish & chips 'n' peas")
   })
 
-  it("strip markup only in Create's guard", () => {
+  it("strip markup only in Create's guard", async () => {
     expect(stripMarkup('<h1>Water on Earth</h1>')).toBe('Water on Earth')
     expect(stripMarkup('# Water on Earth')).toBe('Water on Earth')
   })
 })
 
 describe('the edits', () => {
-  it('writes text as the field holds it, and the title of the question with it', () => {
-    const content = quiz()
+  it('writes text as the field holds it, and the title of the question with it', async () => {
+    const content = await quiz()
     const { byId } = outlineOf(content)
     const { params, applied, violations } = applyChanges(content.params, { t1: 'Water on Earth', t2: 'What <strong>drives</strong> evaporation & rain?', s2: true }, byId)
     expect(violations).toEqual([])
     expect(applied.map((change) => change.id)).toEqual(['t1', 't2', 's2'])
-    expect(params.introPage.title).toBe('Water on Earth')
+    expect(params.introPage.title).toBe('<div>Water on Earth</div>')
     expect(params.questions[0].params.question).toBe('<p>What <strong>drives</strong> evaporation &amp; rain?</p>')
     expect(params.questions[0].metadata.title).toBe('What drives evaporation &amp; rain?')
     expect(params.questions[0].params.answers[1].correct).toBe(true)
     // Untouched: the original, and the copy is a copy.
-    expect(content.params.introPage.title).toBe('The water cycle')
+    expect(content.params.introPage.title).toBe('<div>The water cycle</div>')
   })
 
-  it('refuses an <h1> in the title, with the rule, and applies nothing for it', () => {
-    const content = quiz()
+  it('refuses an <h1> in the title, with the rule, and applies nothing for it', async () => {
+    const content = await quiz()
     const { byId } = outlineOf(content)
     const { params, applied, violations } = applyChanges(content.params, { t1: '<h1>Water on Earth</h1>' }, byId)
     expect(applied).toEqual([])
-    expect(params.introPage.title).toBe('The water cycle')
+    expect(params.introPage.title).toBe('<div>The water cycle</div>')
     expect(violations).toEqual([{ id: 't1', label: `Title [${INLINE}]`, kind: 'format', problem: expect.stringContaining('Do not wrap the text in <h1>') }])
     // What the second try is told: the field, its format, the rule.
     expect(fixPrompt(violations)).toContain(`- t1 Title [${INLINE}]: Do not wrap the text in <h1>`)
   })
 
-  it('refuses a value that repeats the outline line round it, as Chrome\'s model did', () => {
-    const content = quiz()
+  it('refuses a value that repeats the outline line round it, as Chrome\'s model did', async () => {
+    const content = await quiz()
     const { byId } = outlineOf(content)
     const rule = "Write only the new text: not the id, the field's name or its format in brackets, and no quotation marks round it."
     for (const echo of [`[${INLINE}]: The Water Cycle`, `Title [${INLINE}]: "Water on Earth"`, 't1 Water on Earth', '"Water on Earth"', '“Water on Earth”']) {
@@ -210,8 +229,8 @@ describe('the edits', () => {
     expect(applyChanges(content.params, { t1: 'The "water" cycle' }, byId).violations).toEqual([])
   })
 
-  it('refuses what a field refuses, by id and kind', () => {
-    const content = quiz()
+  it('refuses what a field refuses, by id and kind', async () => {
+    const content = await quiz()
     const { byId } = outlineOf(content, { settings: true })
     const id = (label: string) => [...byId].find(([, node]) => node.label === label)![0]
     const { applied, violations } = applyChanges(content.params, { t99: 'x', s1: 'maybe', [id('Pass percentage')]: 120, [id('Progress indicator')]: 'bars', t1: '' }, byId)
@@ -221,15 +240,15 @@ describe('the edits', () => {
     expect(applyChanges(content.params, { [id('Pass percentage')]: 60 }, byId).applied).toEqual([{ id: id('Pass percentage'), label: 'Pass percentage', from: 50, to: 60 }])
   })
 
-  it('keeps asterisks in a Fill in the Blanks line, with tags where the field allows them', () => {
-    const content = contentFrom('blanks', { title: 'Words', sentences: [{ sentence: 'Evaporation is driven by the Sun.', answer: 'Sun' }] }, { pack })
+  it('keeps asterisks in a Fill in the Blanks line, with tags where the field allows them', async () => {
+    const content = await made('blanks', { title: 'Words', sentences: [{ sentence: 'Evaporation is driven by the Sun.', answer: 'Sun' }] })
     const { byId } = outlineOf(content)
     expect(applyChanges(content.params, { t1: 'Rivers flow to the sea.' }, byId).violations[0].problem).toMatch(/asterisks/)
     const { params } = applyChanges(content.params, { t1: 'Rivers <em>always</em> flow to the *sea*.' }, byId)
     expect(params.questions[0]).toBe('<p>Rivers <em>always</em> flow to the *sea*.</p>')
   })
 
-  it('tells the model the formats, with a line and an answer for it, and holds the answer to the ids and their kinds', () => {
+  it('tells the model the formats, with a line and an answer for it, and holds the answer to the ids and their kinds', async () => {
     const system = editSystem('de')
     expect(system).toContain('t7 Question [html: strong em]: "What is rain called in science?"')
     expect(system).toContain('{"changes": {"t7": "What is <em>rain</em> called in science?"}, "reply": "I put rain in italics."}')
@@ -237,7 +256,7 @@ describe('the edits', () => {
     expect(system).toContain('Never use <p>, <div>, <br>, <h1> to <h6> or <a>')
     expect(system).toContain('The activity is in German')
     expect(system).toContain('Keep that language unless the teacher asks for another.')
-    const content = quiz()
+    const content = await quiz()
     const schema = editSchema(outlineOf(content, { settings: true }).byId)
     expect(schema.required).toEqual(['changes', 'reply'])
     expect(schema.properties.changes.additionalProperties).toBe(false)
@@ -251,8 +270,8 @@ describe('the edits', () => {
 describe('what a turn changed, and what it left behind', () => {
   const ANSWER = (question: number, answer: number, field = 'text') => `questions.${question}.params.answers.${answer}.${field === 'text' ? 'text' : `tipsAndFeedback.${field}`}`
 
-  it('says what changed in code\'s words, whatever the reply says', () => {
-    const content = quiz()
+  it('says what changed in code\'s words, whatever the reply says', async () => {
+    const content = await quiz()
     const { byId } = outlineOf(content, { settings: true })
     const id = (path: string) => [...byId].find(([, node]) => node.path.join('.') === path)![0]
     expect(changeNote([], byId)).toBe('Nothing changed.')
@@ -263,8 +282,8 @@ describe('what a turn changed, and what it left behind', () => {
     expect(changeNote(both, byId)).toMatch(/^Changed 1 of 10 text fields and 1 of \d+ other fields\.$/)
   })
 
-  it("finds an answer's feedback left as it was when the answer's words changed, and asks about it in the second try", () => {
-    const content = quiz()
+  it("finds an answer's feedback left as it was when the answer's words changed, and asks about it in the second try", async () => {
+    const content = await quiz()
     const { byId } = outlineOf(content)
     const id = (path: string) => [...byId].find(([, node]) => node.path.join('.') === path)![0]
     const { applied } = applyChanges(content.params, { [id(ANSWER(0, 1))]: 'Gravity', [id(ANSWER(1, 1))]: 'Evaporation', [id(ANSWER(1, 1, 'chosenFeedback'))]: 'That is water leaving the surface.' }, byId)
@@ -283,8 +302,8 @@ describe('what a turn changed, and what it left behind', () => {
     expect(prompt).toMatch(/Answer again with only those fields/)
   })
 
-  it('leaves alone feedback whose answer changed only which is right, or whose question changed', () => {
-    const content = quiz()
+  it('leaves alone feedback whose answer changed only which is right, or whose question changed', async () => {
+    const content = await quiz()
     const { byId } = outlineOf(content)
     const id = (path: string) => [...byId].find(([, node]) => node.path.join('.') === path)![0]
     const { applied } = applyChanges(content.params, { [id('questions.0.params.answers.0.correct')]: false, [id('questions.0.params.answers.1.correct')]: true, [id('questions.0.params.question')]: 'What powers evaporation?' }, byId)
@@ -295,7 +314,7 @@ describe('what a turn changed, and what it left behind', () => {
 
 describe('the working copy and the package', () => {
   it('reads what Create wrote, and plays an edit untrusted with the content check changing nothing', async () => {
-    const content = quiz()
+    const content = await quiz()
     const original = await packageFrom(content)
     const read = await readPackage(original)
     expect(read.mainLibrary).toBe(main(content))
@@ -323,8 +342,8 @@ describe('the working copy and the package', () => {
 describe('empty slots', () => {
   const FEEDBACK = (question: number, answer: number, field = 'chosenFeedback') => `questions.${question}.params.answers.${answer}.tipsAndFeedback.${field}`
 
-  it("are an answer's feedback and tip not written yet, in the outline only when a turn asks for them", () => {
-    const content = quiz()
+  it("are an answer's feedback and tip not written yet, in the outline only when a turn asks for them", async () => {
+    const content = await quiz()
     expect(outlineOf(content).text).not.toContain('""')
     const { text, byId } = outlineOf(content, { empty: true })
     const slot = [...byId.values()].find((node) => node.path.join('.') === FEEDBACK(1, 0))
@@ -335,12 +354,12 @@ describe('empty slots', () => {
     expect(text).toContain('Message displayed if answer is selected [html: strong em sub sup code]: "That is how clouds form."')
     // A filled field is no slot, and a flashcard's image alt text, with no image, is none either.
     expect([...byId.values()].find((node) => node.path.join('.') === FEEDBACK(0, 0))?.empty).toBeUndefined()
-    const cards = contentFrom('cards', { title: 'Terms', cards: [{ front: 'Evaporation', back: 'Water turning into vapour.' }] }, { pack })
+    const cards = await made('cards', { title: 'Terms', cards: [{ front: 'Evaporation', back: 'Water turning into vapour.' }] })
     expect(outlineOf(cards, { empty: true }).text).not.toMatch(/alt/i)
   })
 
-  it('are written as the editor writes them, the groups on the way made where missing, and left alone when left empty', () => {
-    const content = quiz()
+  it('are written as the editor writes them, the groups on the way made where missing, and left alone when left empty', async () => {
+    const content = await quiz()
     delete content.params.questions[1].params.answers[1].tipsAndFeedback
     const { byId } = outlineOf(content, { empty: true })
     const id = (path: string) => [...byId].find(([, node]) => node.path.join('.') === path)![0]
@@ -357,7 +376,7 @@ describe('empty slots', () => {
   })
 
   it('filled, play untrusted with the content check changing nothing', async () => {
-    const content = quiz()
+    const content = await quiz()
     const original = await packageFrom(content)
     const { byId } = outlineOf(content, { empty: true })
     const slots = [...byId].filter(([, node]) => node.empty && node.path.at(-1) !== 'tip')

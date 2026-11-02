@@ -9,6 +9,10 @@
  * small. Empty slots — an answer's feedback or tip not written yet — are left out too, unless a
  * turn asks for them (`empty`), as one that asks for feedback on every answer does.
  *
+ * The ids count only the lines a turn shows, so they are short; with `stableIds` every field takes
+ * its id whether it is shown or not, so an id names the same field whatever the call shows: for a
+ * tool that reads the outline in one call and changes the content in another (`edit/package-edit.js`).
+ *
  * An empty slot and a setting carry H5P's description of the field, in parentheses after its
  * label: their labels alone do not tell them apart. A tip, a message when the answer is chosen
  * and one when it is not are three empty slots side by side, and a quiz's pass percentage and
@@ -29,10 +33,11 @@ import { describeFormat } from './dialects.js'
 
 /**
  * @param {import('./content-model.js').Node[]} nodes
- * @param {{ settings?: boolean, empty?: boolean }} [options]
+ * @param {{ settings?: boolean, empty?: boolean, stableIds?: boolean }} [options] with `stableIds`,
+ *   `byId` holds the fields not shown too
  * @returns {{ text: string, byId: Map<string, import('./content-model.js').Node> }}
  */
-export function outline(nodes, { settings = false, empty = false } = {}) {
+export function outline(nodes, { settings = false, empty = false, stableIds = false } = {}) {
   const lines = []
   const byId = new Map()
   let texts = 0
@@ -43,11 +48,11 @@ export function outline(nodes, { settings = false, empty = false } = {}) {
       lines.push(`${indent}${node.label}`)
       continue
     }
-    if (!node.content && !settings) continue
-    if (node.empty && !empty) continue
+    const shown = (node.content || settings) && (!node.empty || empty)
+    if (!shown && !stableIds) continue
     const id = node.kind === 'text' ? `t${++texts}` : `s${++values}`
     byId.set(id, node)
-    lines.push(lineFor(id, node, indent))
+    if (shown) lines.push(lineFor(id, node, indent))
   }
   return { text: lines.join('\n'), byId }
 }
@@ -87,7 +92,10 @@ export function formatHint(node) {
     case 'select':
       return (field.options ?? []).map((option) => option.value).join('/')
     case 'number':
-      return `number${field.min !== undefined || field.max !== undefined ? ` ${field.min ?? ''}-${field.max ?? ''}` : ''}`
+      // One bound alone, as an end screen's id has (at most 0), is said in words: "number -0" reads as a value.
+      if (field.min !== undefined && field.max !== undefined) return `number ${field.min}-${field.max}`
+      if (field.min !== undefined) return `number, at least ${field.min}`
+      return field.max !== undefined ? `number, at most ${field.max}` : 'number'
     default:
       return ''
   }

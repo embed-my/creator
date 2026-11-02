@@ -2,28 +2,31 @@
  * Create's content, from what the model on this computer answered (`create.js` asks it). The
  * model writes the words and nothing else: it answers a small JSON shape per kind of activity, held
  * to it by the server's `response_format`, and this module puts those words into the content
- * type's own structure. That structure comes from the sweep's `ContentGenerator`, from the pack's
- * `semantics.json`, so every field the content type reads is there with its default, the library
- * versions are the pack's, and the model never sees H5P's form definitions, which are long and
- * would crowd out the teacher's text in a small context window.
+ * type's own structure. That structure comes from h5p-author's `ContentGenerator`, from the pack's
+ * `semantics.json` loaded as h5p-author's build loads it (`loadLibraries`), so every field the
+ * content type reads is there with its default, its interface texts in the content's language from
+ * the library's own translation, the library versions are the pack's, and the model never sees
+ * H5P's form definitions, which are long and would crowd out the teacher's text in a small context
+ * window. The content is then checked as the build checks what it writes (`checkContent`).
  *
  * Every string the model wrote is text: it is escaped before it goes into a field, and the
  * delimiters Fill in the Blanks reads are taken out of an answer. The content type's own defaults
- * in its plain text fields are escaped too, as H5P's validator saves them on a site, so the content
- * is what an H5P site would have saved and the player's content check leaves it as it is. What cannot be used — a question with no right answer, a sentence that does not
- * hold its own blank — is left out, and an answer with nothing usable left is an `AuthoringError`.
+ * in its plain text fields come escaped from the loader, as H5P's validator saves them on a site, so
+ * the content is what an H5P site would have saved and the player's content check leaves it as it
+ * is. What cannot be used — a question with no right answer, a sentence that does not hold its own
+ * blank — is left out, and an answer with nothing usable left is an `AuthoringError`.
  *
- * Pure but for zip.js: the pack's part comes in as an argument (`virtual:h5p-authoring-pack` in the
- * app, `readAuthoringPack()` in `tests/authoring.test.ts`), and the package is a `File`.
+ * Pure but for zip.js and h5p-author's core: the pack comes in as an argument (`libraryPack()` in
+ * the app, h5p-author's `openPack()` in Node), and the package is a `File`.
  */
 
+import { ContentGenerator, checkContent, libraryString, loadLibraries } from '@missing-elements/h5p-author/core'
 import { BlobWriter, TextReader, ZipWriter, configure } from '@zip.js/zip.js'
-import { ContentGenerator, libraryString } from '../scripts/sweep-content.mjs'
 import { escapeHtml, stripMarkup } from './semantics/dialects.js'
 
 export { escapeHtml }
 
-/** The languages Create writes in, by tag, as the instructions to the model name them: those the authoring pack carries translations for. */
+/** The languages Create writes in, by tag, as the instructions to the model name them; the libraries' interface texts come from their own translations into each. */
 export const LANGUAGES = { en: 'English', de: 'German', es: 'Spanish', fr: 'French', ja: 'Japanese' }
 
 /** How much of the teacher's text goes to the model: a small context window holds this and the answer. */
@@ -81,7 +84,7 @@ export const KINDS = {
             tipsAndFeedback: answer.feedback ? { chosenFeedback: `<div>${escapeHtml(answer.feedback)}</div>` } : {}
           }))
         },
-        metadata: subMetadata('Multiple Choice', item.question)
+        metadata: subTitle(item.question)
       }))
     })
   },
@@ -108,7 +111,7 @@ export const KINDS = {
           correct: item.isTrue ? 'true' : 'false',
           behaviour: item.explanation ? { feedbackOnCorrect: escapeHtml(item.explanation), feedbackOnWrong: escapeHtml(item.explanation) } : {}
         },
-        metadata: subMetadata('True/False Question', item.statement)
+        metadata: subTitle(item.statement)
       }))
     })
   },
@@ -170,12 +173,13 @@ export function promptFor(kind, { text: source, count, language }) {
 /**
  * The content of a kind from the model's answer, in the language it wrote: `h5p.json` and the
  * parameters. At most `count` items are kept, of those that can be used.
+ * @param {string} kind
+ * @param {unknown} answer
+ * @param {{ pack: import('@missing-elements/h5p-author/core').LibrarySource, language?: string, count?: number }} options
  */
-export function contentFrom(kind, answer, { pack, language = 'en', count = Infinity }) {
+export async function contentFrom(kind, answer, { pack, language = 'en', count = Infinity }) {
   const definition = KINDS[kind]
   if (!definition) throw new Error(`No such kind of activity: ${kind}`)
-  const generator = new Author(packFor(pack, language))
-  const sub = (name) => libraryString(found(generator, name).library)
 
   const raw = Array.isArray(answer?.[definition.items]) ? answer[definition.items] : []
   const items = raw.map((item) => definition.clean(item)).filter(Boolean).slice(0, count)
@@ -186,8 +190,17 @@ export function contentFrom(kind, answer, { pack, language = 'en', count = Infin
   }
 
   const title = text(answer?.title, MAX_TITLE) || definition.title
+  // The parts are named so the loader loads them too; each is then the pack's newest.
+  const loaded = await loadLibraries(pack, { type: definition.main, language, params: definition.parts.map((library) => ({ library })) })
+  const generator = new ContentGenerator(loaded.entries, { metadata: subMetadata })
+  const sub = (name) => libraryString(found(generator, name).library)
+  const generated = generator.generate(loaded.main, definition.written(items, { title, sub }))
+  // As h5p-author's build does, the content is checked last, in the form H5P saves it.
+  const checked = checkContent(loaded, { type: libraryString(loaded.main.library), params: generated })
+  const problems = [...generator.problems, ...checked.problems]
+  if (problems.length) throw new Error(`The content is not as H5P saves it: ${problems.map(({ path, message }) => `${path} ${message}`).join('; ')}`)
   /** @type {Record<string, any>} the content type's parameters, `content.json` */
-  const params = generator.generate(found(generator, definition.main), definition.written(items, { title, sub }))
+  const params = checked.params
   const libraries = [definition.main, ...definition.parts].map((name) => found(generator, name).library)
   const manifest = {
     title,
@@ -213,25 +226,6 @@ export async function packageFrom(content) {
 }
 
 /**
- * A library's semantics with its own translation laid over them, as H5P's editor lays
- * `language/<code>.json` over `semantics.json`: item by item in a list, key by key in an object, a
- * translated value in place of the one it translates. Its defaults are the content type's buttons
- * and messages, so a German quiz gets German ones.
- */
-export function translated(base, translation) {
-  if (translation === undefined || translation === null) return base
-  if (Array.isArray(base)) return base.map((item, index) => translated(item, Array.isArray(translation) ? translation[index] : undefined))
-  if (isObject(base)) {
-    if (!isObject(translation)) return base
-    const out = { ...base }
-    for (const [key, value] of Object.entries(translation)) out[key] = key in base ? translated(base[key], value) : value
-    return out
-  }
-  // A translation of a value is another value of its kind; anything else is left as it was.
-  return typeof translation === typeof base ? translation : base
-}
-
-/**
  * Fill in the Blanks' markup for a sentence with one blank: the answer between asterisks. The
  * answer has to be in the sentence, as written or in another case, and it loses what the content
  * type would read as more than a word — `*` ends a blank, `/` separates alternatives, `:` starts
@@ -254,39 +248,21 @@ export function fileName(title) {
   return name || 'h5p-content'
 }
 
-/**
- * The generator, with what H5P's editor and validator would have saved: a new UUID for every
- * sub-content, and the defaults of plain text fields escaped. A field with `tags` is markup, which
- * the validator filters and the defaults already are; any other text field it escapes.
- */
-class Author extends ContentGenerator {
-  nextId() {
-    return crypto.randomUUID()
-  }
-
-  field(field, written, stack, lenient) {
-    const value = super.field(field, written, stack, lenient)
-    const plain = field.type === 'text' && (field.tags === undefined || field.tags === null)
-    return plain && written === undefined && typeof value === 'string' ? escapeHtml(value, { keepReferences: true }) : value
-  }
-}
-
-/** The pack's part as the generator takes it, its semantics translated into `language`. */
-export function packFor(pack, language) {
-  return new Map(
-    pack.libraries.map((entry) => [entry.folder, { folder: entry.folder, library: entry.library, semantics: translated(entry.semantics, entry.translations?.[language]) }])
-  )
-}
-
+/** A library the content names, as the pack has it: the newest. */
 function found(generator, name) {
   const entry = generator.find(name)
   if (!entry) throw new Error(`The app's pack has no ${name}`)
   return entry
 }
 
-/** What the editor writes for a question in a set: its type, no licence, and the question as its title, as text. */
-function subMetadata(contentType, title) {
-  return { contentType, license: 'U', title: escapeHtml(title.length > 60 ? `${title.slice(0, 59)}…` : title) }
+/** A question's title in a set, as the editor writes it: the question as one line, at most 60 characters. */
+function subTitle(question) {
+  return { title: question.length > 60 ? `${question.slice(0, 59)}…` : question }
+}
+
+/** What the editor writes for a question in a set: its type, no licence, and its title, as text. */
+function subMetadata(entry, written) {
+  return { contentType: escapeHtml(String(entry.library.title)), license: 'U', title: escapeHtml(String(written?.title ?? entry.library.title)) }
 }
 
 /**
@@ -295,8 +271,4 @@ function subMetadata(contentType, title) {
  */
 function text(value, max = MAX_ITEM) {
   return typeof value === 'string' ? stripMarkup(value).replace(/\s+/g, ' ').trim().slice(0, max).trim() : ''
-}
-
-function isObject(value) {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

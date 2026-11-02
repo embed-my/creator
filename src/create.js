@@ -2,10 +2,11 @@
  * Create: a teacher's own text made into an H5P file by the model on this computer — the server
  * and model chosen in the Model dialog, through `model/openai.js`. The text and what the model
  * writes stay on the computer. What the model is asked, and how its answer becomes a package, is
- * `authoring.js`, loaded with the pack's semantics the first time Create is used, so the app's
- * first load carries neither.
+ * `authoring.js`, loaded with the library pack (`library-pack.js`) the first time Create is used,
+ * so the app's first load carries neither.
  */
 
+import { libraryPack } from './library-pack.js'
 import { ModelError, session as modelSession } from './model/openai.js'
 import { currentServer } from './model/settings.js'
 
@@ -88,7 +89,7 @@ export function createOffer({ onCreated }) {
 async function create({ text, kind, count, language }, signal, say) {
   const server = currentServer()
   if (!server) throw new CreateError('Choose a model first, under Model.')
-  const [authoring, pack] = await Promise.all([import('./authoring.js'), import('virtual:h5p-authoring-pack').then((module) => module.default)])
+  const [authoring, pack] = await Promise.all([import('./authoring.js'), libraryPack()])
 
   const { system, prompt, schema } = authoring.promptFor(kind, { text, count, language })
   const conversation = await modelSession({ server, system, signal })
@@ -104,7 +105,7 @@ async function create({ text, kind, count, language }, signal, say) {
     } catch {
       throw new CreateError("The model's answer was not in the form asked for. Try again.")
     }
-    return await authoring.packageFrom(authoring.contentFrom(kind, parsed, { pack, language, count }))
+    return await authoring.packageFrom(await authoring.contentFrom(kind, parsed, { pack, language, count }))
   } finally {
     clearInterval(clock)
     conversation.destroy()

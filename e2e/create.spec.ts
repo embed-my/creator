@@ -1,6 +1,6 @@
 import { expect, test, type ConsoleMessage, type Page } from '@playwright/test'
 import { contentFrom, packageFrom } from '../src/authoring.js'
-import { readAuthoringPack } from '../scripts/authoring-pack.mjs'
+import { openPack } from '@missing-elements/h5p-author'
 import { MODEL, modelServer, type ChatRequest } from './model-server.js'
 
 /*
@@ -45,7 +45,7 @@ const KINDS = [
   { label: 'Flashcards', kind: 'cards', list: 'cards', shows: 'Evaporation', file: 'Terms.h5p' }
 ]
 
-const pack = readAuthoringPack()
+const pack = openPack()
 
 const TEXT = 'The sun heats water in rivers and seas, and it evaporates. The vapour rises, cools and condenses into clouds.'
 
@@ -84,7 +84,7 @@ for (const kind of KINDS) {
     await expect(dialog).toBeHidden()
     await expect.poll(() => playerState(page)).toBe('ready')
     const frame = page.frameLocator('h5p-player iframe').first()
-    const { params } = contentFrom(kind.kind, ANSWERS[kind.list], { pack: await pack, language: 'de' })
+    const { params } = await contentFrom(kind.kind, ANSWERS[kind.list], { pack: await pack, language: 'de' })
     // A Question Set opens on its cover, with Start in the content's language.
     if (params.introPage?.showIntroPage) await frame.getByRole('button', { name: params.introPage.startButtonText }).click()
     await expect(frame.getByText(kind.shows).first()).toBeVisible()
@@ -132,7 +132,7 @@ test('with no model server, the app says how to get one, and still plays a file'
   await expect(models).toBeHidden()
   await expect(page.getByRole('dialog', { name: 'Create from your text' })).toBeHidden()
 
-  const content = contentFrom('cards', ANSWERS.cards, { pack: await pack })
+  const content = await contentFrom('cards', ANSWERS.cards, { pack: await pack })
   const file = await packageFrom(content)
   await page.locator('#file').setInputFiles({ name: file.name, mimeType: 'application/zip', buffer: Buffer.from(await file.arrayBuffer()) })
 

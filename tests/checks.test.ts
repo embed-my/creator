@@ -1,9 +1,10 @@
+import { openPack } from '@missing-elements/h5p-author'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { SAMPLES, TASKS } from '../evals/tasks.js'
-import { readAuthoringPack } from '../scripts/authoring-pack.mjs'
 import { contentFrom } from '../src/authoring.js'
 import { applyChanges } from '../src/edit/operations.js'
 import { contentModel } from '../src/semantics/content-model.js'
+import { editorLibraries } from '../src/semantics/libraries.js'
 import { outline } from '../src/semantics/outline.js'
 
 /*
@@ -11,28 +12,35 @@ import { outline } from '../src/semantics/outline.js'
  * every check, and a bad one fails the checks it should, saying where.
  */
 
-let pack: Awaited<ReturnType<typeof readAuthoringPack>>
+type Sample = keyof typeof SAMPLES
+/** Each sample as the eval page loads it, with its libraries loaded as the editor reads them. */
+const made = new Map<Sample, { params: any, library: string, libraries: Awaited<ReturnType<typeof editorLibraries>>['entries'] }>()
 
 beforeAll(async () => {
-  pack = await readAuthoringPack()
+  const pack = await openPack()
+  for (const sample of Object.keys(SAMPLES) as Sample[]) {
+    const { kind, answer, language } = SAMPLES[sample]
+    const { manifest, params } = await contentFrom(kind, answer, { pack, language })
+    const main = manifest.preloadedDependencies[0]
+    const library = `${main.machineName} ${main.majorVersion}.${main.minorVersion}`
+    made.set(sample, { params, library, libraries: (await editorLibraries(pack, { type: library, language, params })).entries })
+  }
+  await pack.close()
 })
 
 /**
- * A sample as the eval page loads it, and a run on it: `edit` gives new values by field path,
- * applied as the page applies the model's changes. Returns the content model before and after.
+ * A run on a sample: `edit` gives new values by field path, applied as the page applies the
+ * model's changes. Returns the content model before and after.
  */
-function run(sample: keyof typeof SAMPLES, edit: Record<string, unknown>) {
-  const { kind, answer, language } = SAMPLES[sample]
-  const content = contentFrom(kind, answer, { pack, language })
-  const main = content.manifest.preloadedDependencies[0]
-  const library = `${main.machineName} ${main.majorVersion}.${main.minorVersion}`
-  const before = contentModel(content.params, library, pack, language)
+function run(sample: Sample, edit: Record<string, unknown>) {
+  const { params: saved, library, libraries } = made.get(sample)!
+  const before = contentModel(saved, library, libraries)
   const { byId } = outline(before, { settings: true, empty: true })
   const ids = new Map([...byId].map(([id, node]) => [node.path.join('.'), id]))
   const changes = Object.fromEntries(Object.entries(edit).map(([path, value]) => [ids.get(path) ?? `no field at ${path}`, value]))
-  const { params, violations } = applyChanges(content.params, changes, byId)
+  const { params, violations } = applyChanges(saved, changes, byId)
   expect(violations).toEqual([])
-  return { before, after: contentModel(params, library, pack, language) }
+  return { before, after: contentModel(params, library, libraries) }
 }
 
 /** Each check of a task on a run: `true`, or what it said. */

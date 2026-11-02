@@ -17,11 +17,12 @@
 import '@missing-elements/h5p-offline-player'
 import { pack } from '@missing-elements/h5p-libraries'
 import { runtime } from '@missing-elements/h5p-runtime'
-import authoringPack from 'virtual:h5p-authoring-pack'
 import { SAMPLES } from '../evals/tasks.js'
 import { contentFrom, packageFrom } from '../src/authoring.js'
 import { applyChanges } from '../src/edit/operations.js'
+import { openForEdit } from '../src/edit/package-edit.js'
 import { editPrompt, editSchema, editSystem } from '../src/edit/prompt.js'
+import { libraryPack } from '../src/library-pack.js'
 import { session } from '../src/model/openai.js'
 import { withContent } from '../src/package/working-copy.js'
 import { contentModel } from '../src/semantics/content-model.js'
@@ -91,15 +92,15 @@ async function check() {
   })
 
   const sample = SAMPLES['quiz-en']
-  const content = contentFrom(sample.kind, sample.answer, { pack: authoringPack, language: sample.language })
+  const pack = await libraryPack()
+  const content = await contentFrom(sample.kind, sample.answer, { pack, language: sample.language })
   const file = await packageFrom(content)
-  const main = content.manifest.preloadedDependencies[0]
-  const mainLibrary = `${main.machineName} ${main.majorVersion}.${main.minorVersion}`
+  const { mainLibrary, libraries } = await openForEdit(file, pack)
   const first = await play(file)
   const workers = 'serviceWorker' in navigator ? (await navigator.serviceWorker.getRegistrations()).map((registration) => registration.active?.scriptURL ?? 'installing') : []
   report('The player plays a quiz as Create makes it', first.state === 'ready', { ...first, workers })
 
-  const { text, byId } = outline(contentModel(content.params, mainLibrary, authoringPack, 'en'))
+  const { text, byId } = outline(contentModel(content.params, mainLibrary, libraries.entries))
   const body = {
     model,
     messages: [

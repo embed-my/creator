@@ -1,6 +1,7 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { openPack } from '@missing-elements/h5p-author'
 import { verifyPackage, summarize } from '@missing-elements/h5p-verify'
 import { BlobReader, TextWriter, ZipReader } from '@zip.js/zip.js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -13,11 +14,9 @@ import {
   fileName,
   packageFrom,
   promptFor,
-  schemaFor,
-  translated
+  schemaFor
 } from '../src/authoring.js'
-import { AUTHORING_LIBRARIES, PARTS_DIR, readAuthoringPack } from '../scripts/authoring-pack.mjs'
-import { mediaIn } from '../scripts/sweep-content.mjs'
+import { PARTS_DIR } from '../scripts/pack-parts.mjs'
 
 /**
  * Create's content, from answers written the way the model answers, against the real pack:
@@ -26,17 +25,18 @@ import { mediaIn } from '../scripts/sweep-content.mjs'
  * through the runtime's content check, the port of H5P's validator, which must change nothing.
  */
 
-type Pack = Awaited<ReturnType<typeof readAuthoringPack>>
+type Pack = Awaited<ReturnType<typeof openPack>>
 let pack: Pack
 /** Where the packages are written for the verifier, which reads a file from disk. */
 let dir: string
 
 beforeAll(async () => {
-  pack = await readAuthoringPack()
+  pack = await openPack()
   dir = await mkdtemp(join(tmpdir(), 'creator-'))
 })
 
 afterAll(async () => {
+  await pack?.close()
   await rm(dir, { recursive: true, force: true })
 })
 
@@ -95,12 +95,12 @@ describe("Create's content", () => {
   for (const kind of Object.keys(KINDS)) {
     for (const language of ['en', 'de', 'ja']) {
       it(`makes ${kind} in ${language} that plays untrusted, the content check changing nothing`, async () => {
-        const content = contentFrom(kind, ANSWERS[kind], { pack, language })
+        const content = await contentFrom(kind, ANSWERS[kind], { pack, language })
 
         expect(content.items).toBe(2)
         expect(content.written).toBe(3)
-        // Nothing to carry: no media.
-        expect(mediaIn(content.params)).toEqual([])
+        // Nothing to carry: no files.
+        expect(JSON.stringify(content.params)).not.toContain('"path":')
 
         const file = join(dir, `${kind}-${language}.h5p`)
         await writeFile(file, new Uint8Array(await (await packageFrom(content)).arrayBuffer()))
@@ -113,9 +113,9 @@ describe("Create's content", () => {
     }
   }
 
-  it("names the pack's versions, in h5p.json and in the sub-content", () => {
-    const content = contentFrom('quiz', ANSWERS.quiz, { pack, language: 'en' })
-    const version = (name: string) => pack.libraries.find((entry) => entry.library.machineName === name)!.library
+  it("names the pack's versions, in h5p.json and in the sub-content", async () => {
+    const content = await contentFrom('quiz', ANSWERS.quiz, { pack, language: 'en' })
+    const version = (name: string) => pack.newest(name)!
     expect(content.manifest).toMatchObject({
       title: 'The water cycle',
       mainLibrary: 'H5P.QuestionSet',
@@ -137,52 +137,53 @@ describe("Create's content", () => {
     for (const id of ids) expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
   })
 
-  it('drops the markup the model wrote, and escapes the rest', () => {
-    const content = contentFrom('quiz', ANSWERS.quiz, { pack })
+  it('drops the markup the model wrote, and escapes the rest', async () => {
+    const content = await contentFrom('quiz', ANSWERS.quiz, { pack })
     const [, second] = content.params.questions
     // The <b> the model wrote is noise, not content; an ampersand it writes is text, escaped.
     expect(second.params.question).toBe('<p>What is rain called in science?</p>')
     expect(content.params.questions[0].params.answers[1].text).toBe('<div>The moon</div>')
     expect(second.params.answers[0]).toMatchObject({ text: '<div>Precipitation</div>', correct: true })
     expect(content.params.questions[0].params.answers[1].tipsAndFeedback.chosenFeedback).toBe('<div>The moon moves tides, not vapour.</div>')
-    expect(content.params.introPage).toMatchObject({ showIntroPage: true, title: 'The water cycle' })
+    // The title is markup: wrapped as H5P's editor wraps a line typed into it.
+    expect(content.params.introPage).toMatchObject({ showIntroPage: true, title: '<div>The water cycle</div>' })
   })
 
-  it('writes the true or false of each statement', () => {
-    const content = contentFrom('true-false', ANSWERS['true-false'], { pack })
+  it('writes the true or false of each statement', async () => {
+    const content = await contentFrom('true-false', ANSWERS['true-false'], { pack })
     expect(content.params.questions.map((question: { params: { correct: string } }) => question.params.correct)).toEqual(['true', 'false'])
     expect(content.params.questions[1].params.behaviour).toMatchObject({ feedbackOnCorrect: 'Gravity pulls it down.', feedbackOnWrong: 'Gravity pulls it down.' })
   })
 
-  it("gives the content type's buttons in the content's language", () => {
-    const english = contentFrom('quiz', ANSWERS.quiz, { pack, language: 'en' })
-    const german = contentFrom('quiz', ANSWERS.quiz, { pack, language: 'de' })
+  it("gives the content type's buttons in the content's language", async () => {
+    const english = await contentFrom('quiz', ANSWERS.quiz, { pack, language: 'en' })
+    const german = await contentFrom('quiz', ANSWERS.quiz, { pack, language: 'de' })
     expect(english.params.texts.finishButton).toBe('Finish')
     expect(german.params.texts.finishButton).not.toBe(english.params.texts.finishButton)
     expect(german.params.questions[0].params.UI.checkAnswerButton).not.toBe(english.params.questions[0].params.UI.checkAnswerButton)
-    const cards = contentFrom('cards', ANSWERS.cards, { pack, language: 'fr' })
+    const cards = await contentFrom('cards', ANSWERS.cards, { pack, language: 'fr' })
     expect(cards.params.answer).not.toBe('Turn')
   })
 
-  it('keeps at most as many items as were asked for', () => {
+  it('keeps at most as many items as were asked for', async () => {
     const many = { title: 'Many', cards: Array.from({ length: 9 }, (_, index) => ({ front: `Term ${index}`, back: `Meaning ${index}` })) }
-    expect(contentFrom('cards', many, { pack, count: 5 }).params.dialogs).toHaveLength(5)
+    expect((await contentFrom('cards', many, { pack, count: 5 })).params.dialogs).toHaveLength(5)
   })
 
-  it('says so when nothing the model wrote can be used', () => {
-    expect(() => contentFrom('quiz', { title: 'Empty', questions: [] }, { pack })).toThrow(AuthoringError)
-    expect(() => contentFrom('blanks', { sentences: [{ sentence: 'A', answer: 'B' }] }, { pack })).toThrow(/None of the 1 items/)
-    expect(() => contentFrom('cards', null, { pack })).toThrow(/nothing that could be used/)
+  it('says so when nothing the model wrote can be used', async () => {
+    await expect(contentFrom('quiz', { title: 'Empty', questions: [] }, { pack })).rejects.toThrow(AuthoringError)
+    await expect(contentFrom('blanks', { sentences: [{ sentence: 'A', answer: 'B' }] }, { pack })).rejects.toThrow(/None of the 1 items/)
+    await expect(contentFrom('cards', null, { pack })).rejects.toThrow(/nothing that could be used/)
   })
 
-  it('titles an activity whose answer has none by its kind', () => {
-    const { title, manifest } = contentFrom('cards', { cards: ANSWERS.cards.cards }, { pack })
+  it('titles an activity whose answer has none by its kind', async () => {
+    const { title, manifest } = await contentFrom('cards', { cards: ANSWERS.cards.cards }, { pack })
     expect(title).toBe('Flashcards')
     expect(manifest.title).toBe('Flashcards')
   })
 
   it('packages it as a content-only export', async () => {
-    const content = contentFrom('blanks', ANSWERS.blanks, { pack, language: 'de' })
+    const content = await contentFrom('blanks', ANSWERS.blanks, { pack, language: 'de' })
     const file = await packageFrom(content)
     expect(file.name).toBe('Words-of-the-water-cycle.h5p')
     const reader = new ZipReader(new BlobReader(file))
@@ -218,10 +219,8 @@ describe('what the model is asked', () => {
     expect(prompt.match(/§+/)![0]).toHaveLength(6000)
   })
 
-  it('reads only libraries the pack has', () => {
-    for (const { main, parts } of Object.values(KINDS)) for (const name of [main, ...parts]) expect(AUTHORING_LIBRARIES).toContain(name)
-    expect(pack.libraries.map((entry) => entry.library.machineName)).toEqual(AUTHORING_LIBRARIES)
-    for (const entry of pack.libraries) expect(Object.keys(entry.translations).sort()).toEqual(['de', 'es', 'fr', 'ja'])
+  it('makes only content types the pack has', () => {
+    for (const { main, parts } of Object.values(KINDS)) for (const name of [main, ...parts]) expect(pack.newest(name), name).not.toBeNull()
   })
 })
 
@@ -233,15 +232,6 @@ describe('the pieces', () => {
     expect(blankSentence('Stars *shine* at night.', 'shine')).toBe('<p>Stars *shine* at night.</p>')
     expect(blankSentence('Use and/or here.', 'and/or')).toBeNull()
     expect(blankSentence('Nothing to blank.', '')).toBeNull()
-  })
-
-  it('lays a translation over the semantics as the editor does', () => {
-    const semantics = [{ name: 'a', type: 'text', default: 'Check', label: 'A' }, { name: 'b', type: 'group', fields: [{ name: 'c', type: 'text', default: 'Retry' }] }]
-    const out = translated(semantics, [{ default: 'Prüfen' }, { fields: [{ default: 'Wiederholen' }] }])
-    expect(out).toEqual([{ name: 'a', type: 'text', default: 'Prüfen', label: 'A' }, { name: 'b', type: 'group', fields: [{ name: 'c', type: 'text', default: 'Wiederholen' }] }])
-    // Untouched where the translation says nothing, or something of another kind.
-    expect(translated(semantics, undefined)).toBe(semantics)
-    expect(translated([{ default: 3 }], [{ default: 'three' }])).toEqual([{ default: 3 }])
   })
 
   it('escapes the five characters markup reads, as H5P saves text', () => {

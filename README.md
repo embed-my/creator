@@ -40,14 +40,14 @@ pnpm test        # Create's packages played through h5p-verify, the editing spin
 pnpm typecheck
 pnpm build && pnpm e2e   # the built app in Chromium, Firefox and WebKit, with a stand-in model server
 pnpm tauri build --debug --no-bundle   # the desktop app: src-tauri/target/debug/embed-my-creator
+pnpm h5p-edit outline <file.h5p>       # the agent toolset's editing commands: outline, apply
 ```
 
 [AGENTS.md](AGENTS.md) has the design, what the local model servers offer, and what is left to do.
 
 ## Licence
 
-MIT. `scripts/sweep-content.mjs` is copied from h5p-offline-player, also MIT
-([LICENSE-h5p-offline-player](LICENSE-h5p-offline-player)). The H5P runtime the app will carry is
+MIT. The H5P runtime the app will carry is
 GPL-3.0, and the H5P libraries in the pack have their own licences, listed in
 `@missing-elements/h5p-libraries`' `libraries.txt`.
 

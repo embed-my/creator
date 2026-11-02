@@ -37,7 +37,8 @@ test('a run edits the outline, plays the result and logs the run', async ({ page
   // The <h1> is refused and counted, and the second try is applied.
   await expect(page.getByRole('status')).toContainText('Changed 1 of 20 text fields. 0 refused, 1 format break(s) on the first try')
   await expect(outline).toContainText('t1 Title [html: strong em sub sup code]: "EDITED The water cycle"')
-  await expect(page.locator('#applied li')).toHaveText(['t1 Title: The water cycle → EDITED The water cycle'])
+  // As stored: the title is markup, wrapped as H5P's editor wraps a line typed into it.
+  await expect(page.locator('#applied li')).toHaveText(['t1 Title: <div>The water cycle</div> → <div>EDITED The water cycle</div>'])
   await expect(page.locator('#runs tbody tr')).toHaveCount(1)
   const cells = page.locator('#runs tbody tr td')
   await expect(cells.nth(2)).toHaveText(MODEL)

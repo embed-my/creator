@@ -8,12 +8,15 @@ importers:
 
   .:
     dependencies:
+      '@missing-elements/h5p-author':
+        specifier: ^0.2.0
+        version: 0.2.0(@missing-elements/h5p-runtime@1.0.0)
       '@missing-elements/h5p-libraries':
         specifier: ^1.0.0
         version: 1.0.0
       '@missing-elements/h5p-offline-player':
-        specifier: ^1.2.0
-        version: 1.2.0(@missing-elements/h5p-runtime@1.0.0)
+        specifier: ^1.3.0
+        version: 1.3.0(@missing-elements/h5p-runtime@1.0.0)
       '@missing-elements/h5p-runtime':
         specifier: ^1.0.0
         version: 1.0.0
@@ -61,12 +64,22 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
+  '@missing-elements/h5p-author@0.2.0':
+    resolution: {integrity: sha512-n7aMnObyPm6kGsGPu9hzjo2D6QYDVbkNkX462jliWFMSsPqxI2KoCcgQqvx1KatN8fVv9FqTFetHYnY8gH3W+Q==}
+    engines: {node: '>=22'}
+    hasBin: true
+
   '@missing-elements/h5p-libraries@1.0.0':
     resolution: {integrity: sha512-Ii9naBozRohB2THKckOlutgVd4AYoLT7CXQf9hiavDGGGCYfz84a/4scVOC5Mz98ryetI8tar2EjZ5r9zjUDCQ==}
     engines: {node: '>=20'}
 
-  '@missing-elements/h5p-offline-player@1.2.0':
-    resolution: {integrity: sha512-4RDBPg6ZE3qTqMXEaDwPwxBwZ7PqJYtru9gWCZCtsAStMqgoVSFgiJE215SWJt+CUoxR+d+/9pYnZ43SqiQxng==}
+  '@missing-elements/h5p-normalize@1.2.0':
+    resolution: {integrity: sha512-GHYFGLe2CDwGUZ5qPNwtIrAIR8jXBOjQ0JF5UB6/fMikXkPdmGdY/em/s2be1h7vnqkaOqVzrAnP2qEG7FLaoQ==}
+    engines: {node: '>=22'}
+    hasBin: true
+
+  '@missing-elements/h5p-offline-player@1.3.0':
+    resolution: {integrity: sha512-MbfEUaGU7tn2LNeC341nCLto4BwHDShq4X+B55RyMBs59F42f+50WfHKcZueY0rSl07VqboUehrwz57twp4OBg==}
     engines: {node: '>=20'}
     peerDependencies:
       '@missing-elements/h5p-runtime': ^1.0.0
@@ -682,9 +695,22 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
 
+  '@missing-elements/h5p-author@0.2.0(@missing-elements/h5p-runtime@1.0.0)':
+    dependencies:
+      '@missing-elements/h5p-libraries': 1.0.0
+      '@missing-elements/h5p-normalize': 1.2.0
+      '@missing-elements/h5p-offline-player': 1.3.0(@missing-elements/h5p-runtime@1.0.0)
+      '@zip.js/zip.js': 2.24.0
+    transitivePeerDependencies:
+      - '@missing-elements/h5p-runtime'
+
   '@missing-elements/h5p-libraries@1.0.0': {}
 
-  '@missing-elements/h5p-offline-player@1.2.0(@missing-elements/h5p-runtime@1.0.0)':
+  '@missing-elements/h5p-normalize@1.2.0':
+    dependencies:
+      '@zip.js/zip.js': 2.24.0
+
+  '@missing-elements/h5p-offline-player@1.3.0(@missing-elements/h5p-runtime@1.0.0)':
     dependencies:
       '@zip.js/zip.js': 2.24.0
     optionalDependencies:
@@ -694,7 +720,7 @@ snapshots:
 
   '@missing-elements/h5p-verify@1.4.0':
     dependencies:
-      '@missing-elements/h5p-offline-player': 1.2.0(@missing-elements/h5p-runtime@1.0.0)
+      '@missing-elements/h5p-offline-player': 1.3.0(@missing-elements/h5p-runtime@1.0.0)
       '@missing-elements/h5p-runtime': 1.0.0
       playwright-core: 1.64.1
 

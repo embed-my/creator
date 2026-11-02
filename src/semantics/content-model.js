@@ -10,13 +10,11 @@
  * "Correct" does; elsewhere it is a setting, shown only on request. Media and files are left
  * out: they are carried through as they are.
  *
- * Pure: the pack is the part `readAuthoringPack()` reads (`virtual:h5p-authoring-pack` in the
- * app), and the walk mirrors `ContentGenerator`, so a group of one field is read where the
- * generator saved it.
+ * Pure: the libraries are handed in, by folder, each with its semantics in the content's language
+ * — the `entries` `editorLibraries` loads (`libraries.js`) — and the walk mirrors h5p-author's
+ * `ContentGenerator`, so a group of one field is read where the generator saved it.
  */
 
-import { ContentGenerator } from '../../scripts/sweep-content.mjs'
-import { packFor } from '../authoring.js'
 import { dialectFor, formatOf, toModel } from './dialects.js'
 
 /**
@@ -40,25 +38,32 @@ import { dialectFor, formatOf, toModel } from './dialects.js'
  */
 
 /**
+ * @typedef {Map<string, { folder: string, library: any, semantics: any[] | null }>} Libraries by
+ *   folder; the semantics translated into the content's language, for the defaults it was given
+ */
+
+/**
  * @param {any} params `content/content.json`
  * @param {string} mainLibrary `H5P.QuestionSet 1.21`, from `h5p.json`
- * @param {{ libraries: any[] }} pack
- * @param {string} [language] the content's, for the defaults it was given
+ * @param {Libraries} libraries
  * @returns {Node[]}
  */
-export function contentModel(params, mainLibrary, pack, language = 'en') {
-  const generator = new ContentGenerator(packFor(pack, language))
-  const entry = libraryEntry(generator, mainLibrary)
+export function contentModel(params, mainLibrary, libraries) {
+  const entry = libraryEntry(libraries, mainLibrary)
   if (!entry) throw new Error(`The pack has no ${mainLibrary}`)
-  const walk = new Walk(generator)
+  const walk = new Walk(libraries)
   walk.fields(entry.semantics, params, [], { library: entry.library.machineName, fieldPath: '', depth: 0, inItem: false, item: null, sub: null, heading: null })
   return walk.nodes
 }
 
-/** Whether every library the content names is in the pack: the condition for editing it here. */
-export function editable(params, mainLibrary, pack) {
-  const generator = new ContentGenerator(packFor(pack, 'en'))
-  if (!libraryEntry(generator, mainLibrary)) return false
+/**
+ * Whether every library the content names is in the pack: the condition for editing it here.
+ * @param {any} params
+ * @param {string} mainLibrary
+ * @param {Libraries} libraries
+ */
+export function editable(params, mainLibrary, libraries) {
+  if (!libraryEntry(libraries, mainLibrary)) return false
   const named = []
   const collect = (value) => {
     if (Array.isArray(value)) value.forEach(collect)
@@ -68,17 +73,32 @@ export function editable(params, mainLibrary, pack) {
     }
   }
   collect(params)
-  return named.every((library) => libraryEntry(generator, library))
+  return named.every((library) => libraryEntry(libraries, library))
 }
 
-function libraryEntry(generator, library) {
+/**
+ * The library named `H5P.MultiChoice 1.16`: the newest minor of its major that the libraries
+ * have, as the player serves it for content written for any minor of that major, and only with
+ * semantics, which a library loaded for no content lacks.
+ * @param {Libraries} libraries
+ * @param {string} library
+ */
+function libraryEntry(libraries, library) {
   const match = /^(\S+) (\d+)\.(\d+)$/.exec(library ?? '')
-  return match ? generator.find(match[1], Number(match[2])) : null
+  if (!match) return null
+  let best = null
+  for (const entry of libraries.values()) {
+    const { machineName, majorVersion, minorVersion } = entry.library
+    if (machineName !== match[1] || majorVersion !== Number(match[2]) || !entry.semantics) continue
+    if (!best || minorVersion > best.library.minorVersion) best = entry
+  }
+  return best
 }
 
 class Walk {
-  constructor(generator) {
-    this.generator = generator
+  /** @param {Libraries} libraries */
+  constructor(libraries) {
+    this.libraries = libraries
     /** @type {Node[]} */
     this.nodes = []
   }
@@ -112,7 +132,7 @@ class Walk {
       }
       case 'library': {
         if (!value || typeof value.library !== 'string') return
-        const entry = libraryEntry(this.generator, value.library)
+        const entry = libraryEntry(this.libraries, value.library)
         if (!entry) {
           if (ctx.heading) ctx.heading.label += ` (${value.library}: not in the pack, not editable)`
           return

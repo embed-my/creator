@@ -22,14 +22,14 @@
 import '@missing-elements/h5p-offline-player'
 import { pack } from '@missing-elements/h5p-libraries'
 import { runtime } from '@missing-elements/h5p-runtime'
-import authoringPack from 'virtual:h5p-authoring-pack'
 import { contentFrom, packageFrom } from '../src/authoring.js'
 import { applyChanges, changeNote, staleFeedback } from '../src/edit/operations.js'
+import { openForEdit } from '../src/edit/package-edit.js'
 import { editPrompt, editSchema, editSystem, fixPrompt } from '../src/edit/prompt.js'
 import { openModelDialog } from '../src/model-dialog.js'
 import { ModelError, session as modelSession } from '../src/model/openai.js'
+import { libraryPack } from '../src/library-pack.js'
 import { currentServer, findServer, modelLabel, onServerChange } from '../src/model/settings.js'
-import { readPackage } from '../src/package/read.js'
 import { withContent } from '../src/package/working-copy.js'
 import { contentModel, editable } from '../src/semantics/content-model.js'
 import { outline } from '../src/semantics/outline.js'
@@ -51,7 +51,7 @@ onServerChange(showServer)
 $('#model').addEventListener('click', openModelDialog)
 showServer(await findServer())
 
-/** The content being edited: its file as the player plays it, and its two JSON files. */
+/** The content being edited: its file as the player plays it, its two JSON files, and its libraries by folder. */
 let current = null
 let byId = new Map()
 /** The runs so far, for the table. */
@@ -69,23 +69,24 @@ const say = (text, tone = '') => {
 async function loadSample(key) {
   say('')
   const sample = SAMPLES[key]
-  const content = contentFrom(sample.kind, sample.answer, { pack: authoringPack, language: sample.language })
-  const file = await packageFrom(content)
-  const main = content.manifest.preloadedDependencies[0]
-  setCurrent({ file, manifest: content.manifest, params: content.params, mainLibrary: `${main.machineName} ${main.majorVersion}.${main.minorVersion}`, language: sample.language, name: key })
+  const pack = await libraryPack()
+  const file = await packageFrom(await contentFrom(sample.kind, sample.answer, { pack, language: sample.language }))
+  const { manifest, params, mainLibrary, libraries } = await openForEdit(file, pack)
+  setCurrent({ file, manifest, params, mainLibrary, language: sample.language, libraries: libraries.entries, name: key })
 }
 
 async function openFile(file) {
-  const { manifest, params, mainLibrary } = await readPackage(file)
-  if (!mainLibrary || !editable(params, mainLibrary, authoringPack)) {
-    say('This package uses a content type the eval page has no semantics for (only the five of Create). It plays, but cannot be edited.', 'error')
+  const opened = await openForEdit(file, await libraryPack()).catch(() => null)
+  if (!opened || !editable(opened.params, opened.mainLibrary, opened.libraries.entries)) {
+    say('This package uses a library the pack does not have. It plays, but cannot be edited.', 'error')
     player.file = file
     current = null
     render()
     return
   }
   say('')
-  setCurrent({ file, manifest, params, mainLibrary, language: manifest.language ?? 'en', name: file.name })
+  const { manifest, params, mainLibrary, language, libraries } = opened
+  setCurrent({ file, manifest, params, mainLibrary, language, libraries: libraries.entries, name: file.name })
 }
 
 function setCurrent(next) {
@@ -101,7 +102,7 @@ function render() {
     byId = new Map()
     return
   }
-  const nodes = contentModel(current.params, current.mainLibrary, authoringPack, current.language)
+  const nodes = contentModel(current.params, current.mainLibrary, current.libraries)
   const result = outline(nodes, { settings: $('#settings').checked, empty: $('#empty').checked })
   byId = result.byId
   $('#outline').textContent = result.text
@@ -153,7 +154,7 @@ async function run() {
   $('#answer').textContent = ''
   $('#applied').replaceChildren()
   $('#checks').replaceChildren()
-  const before = contentModel(current.params, current.mainLibrary, authoringPack, current.language)
+  const before = contentModel(current.params, current.mainLibrary, current.libraries)
   const started = performance.now()
   let conversation = null
   try {
@@ -188,7 +189,7 @@ async function run() {
         const file = await withContent(current.file, { params: result.params })
         setCurrent({ ...current, file, params: result.params })
       }
-      const checked = runChecks(before, contentModel(result.params, current.mainLibrary, authoringPack, current.language))
+      const checked = runChecks(before, contentModel(result.params, current.mainLibrary, current.libraries))
       for (const { name, result: outcome } of checked.results) $('#checks').append(item(outcome === true ? `✓ ${name}` : `✗ ${name}: ${outcome}`, outcome === true ? '' : 'violation'))
       say(`${changeNote(result.applied, byId)} ${result.violations.length} refused, ${formatBreaks} format break(s) on the first try${stale.length ? `, ${stale.length} feedback(s) asked about again` : ''}, checks ${checked.cell}, ${ms} ms. The model says: "${parsed.reply ?? ''}"`)
       runs.push(row({ model: server.model, ms, quota, changed: result.applied.length, refused: result.violations.length, formatBreaks, schema: first.schema, tries: second ? 2 : 1, checks: checked.cell }))

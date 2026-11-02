@@ -75,8 +75,10 @@ the pack's versions.
 
 ### semantics
 
-The pack's `semantics.json` for every library, carried by the app as one lazily loaded chunk per
-library (the Vite plugin `authoringPackPlugin` extended from five libraries to all). From a
+The pack's `semantics.json` for every library, loaded as h5p-author's build loads it
+(`loadLibraries` over its `openPack`, which in the page fetches a library's part whole when content
+first needs it and checks it by its SHA-256; since 2026-11-03, in place of a Vite plugin that
+carried five). From a
 library's semantics, `classify(library)` says whether it is a **text type**: every field is text,
 number, boolean, select, list or group, or a library field whose options are text types. Media,
 coordinates and file fields make a type not-text, and so not editable here yet.
