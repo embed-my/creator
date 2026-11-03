@@ -224,7 +224,7 @@ describe('apply', () => {
   })
 })
 
-describe('what real packages taught (2026-11-03)', () => {
+describe('texts with asterisks: Drag the Words and Mark the Words', () => {
   const RIVERS = { title: 'Rivers', language: 'en', license: 'CC BY', licenseVersion: '4.0', authors: AUTHORS }
 
   it("keeps a Drag the Words text's lines and its blanks", async () => {

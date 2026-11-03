@@ -141,17 +141,12 @@ pnpm h5p-edit apply <file.h5p> <changes.json | -> <out.h5p> [--json]
   pins where it does not (`packageLibraries`, `loadLibraries`), so a content-only package, as
   Create makes them, edits as well as a full one. Exit status 0 written or nothing to change,
   1 refused, 2 not run.
-- **Tried on 99 real packages** of 27 types (2026-11-03, notes, question 31): every one outlines
-  in under 0.6 s; a quiz, Dialog Cards, a Course Presentation and an Interactive Video were edited
-  and play, with only `content/content.json` changed. 29 already held problems their editors let
-  through (407 in all), which stay counted, not refused.
 - **What it does not do yet:** add, remove or move list items; media; the package's title; a
   translation's interface texts and h5p.json's `language`, so a translated package keeps its old
   buttons. The content model shows every field of a list item as content, which suits the four
-  text kinds and floods the rest: on the real packages, 72% of the default outline's lines are
-  such settings (positions and sizes H5P's editor never shows, opacities, Course Presentation's
-  button settings, Interactive Video's timing). Showing only the answer key there would cut the
-  outlines by two thirds. Still to settle: a skill, MCP tools or both, and where the commands live.
+  text kinds and is noisy for the rest: positions and sizes H5P's editor never shows, opacities,
+  a Branching Scenario's hidden `nextContentId`s. Still to settle: a skill, MCP tools or both, and
+  where the commands live (notes, question 31).
 
 ## Layout
 
@@ -292,13 +287,12 @@ That file is GPL and the published runtime has only `dist/`, so it is not used h
 - **Keep a text area's lines.** A plain text field typed in several lines (`widget: "textarea"`,
   Drag the Words' text and five more in the pack) keeps its line breaks, as H5P's validator does,
   and Drag the Words shows them. Until 2026-11-03 any change joined them into one line.
-- **Refuse what empties an exercise.** Drag the Words or Mark the Words with every asterisk gone
-  plays and passes verify, with nothing to drag or mark; its dialect refuses it, as Fill in the
-  Blanks' does.
+- **Refuse what empties an exercise.** Drag the Words or Mark the Words text with every asterisk
+  gone leaves nothing to drag or mark; its dialect refuses it, as Fill in the Blanks' does.
 
 ## Left to do
 
-1. **The agent toolset, from the trial on real packages** (notes, question 31): inside list items,
+1. **The agent toolset, next:** inside list items,
    only the answer key as content (fields named `correct…` or marked `importance: "high"`), the
    rest settings, `widget: "none"` never shown, colours settings, an interaction's time and a
    score range's bounds in the item's heading; the title as a field; a language change in
