@@ -11,8 +11,13 @@
  * model to correct. Only Create, which has no second turn, strips markup as a guard
  * (`stripMarkup`).
  *
- * A dialect is a field whose text means more than its format: Fill in the Blanks marks the
- * blank with asterisks, which no format uses, so the two never collide.
+ * A dialect is a field whose text means more than its format: Fill in the Blanks and Drag the
+ * Words mark the blank with asterisks, Mark the Words the words to mark, which no format uses, so
+ * the two never collide. Text the dialect needs no longer has, as a rewrite that dropped every
+ * asterisk, is refused: it would play, as text with nothing to fill in or mark.
+ *
+ * A plain text field an author types in several lines, Drag the Words' text among them, keeps
+ * its line breaks: there they are the text's lines.
  */
 
 /** The tags the model may write, where a field's `tags` include them: they mark words, nothing more. */
@@ -22,27 +27,41 @@ export const INLINE_TAGS = ['strong', 'em', 'u', 'del', 'sub', 'sup', 'code']
 const SYNONYMS = { b: 'strong', i: 'em', s: 'del', strike: 'del' }
 
 /** The dialects by library, by the field's path in the semantics with list indexes left out. */
-const DIALECTS = { 'H5P.Blanks': { 'questions[].question': 'blanks' } }
+const DIALECTS = {
+  'H5P.Blanks': { 'questions[].question': 'blanks' },
+  'H5P.DragText': { textField: 'blanks' },
+  'H5P.MarkTheWords': { textField: 'marks' }
+}
 
 export function dialectFor(machineName, fieldPath) {
   return DIALECTS[machineName]?.[fieldPath] ?? 'default'
 }
 
 /**
- * @typedef {{ html: boolean, tags: string[], blanks: boolean }} Format `html`: the field holds
- *   markup; `tags`: the inline tags the model may write in it; `blanks`: a Fill in the Blanks line
+ * @typedef {{ html: boolean, tags: string[], blanks: boolean, marks?: boolean, lines?: boolean }} Format
+ *   `html`: the field holds markup; `tags`: the inline tags the model may write in it; `blanks`: a
+ *   Fill in the Blanks line or a Drag the Words text, its blanks between asterisks; `marks`: a Mark
+ *   the Words text, the words to mark between asterisks; `lines`: plain text an author types in
+ *   several lines (the `textarea` widget), which keeps its line breaks
  */
 
 /** A text field's format, from its semantics. */
 export function formatOf(field, dialect = 'default') {
   const html = Array.isArray(field?.tags)
-  return { html, tags: html ? INLINE_TAGS.filter((tag) => field.tags.includes(tag)) : [], blanks: dialect === 'blanks' }
+  return {
+    html,
+    tags: html ? INLINE_TAGS.filter((tag) => field.tags.includes(tag)) : [],
+    blanks: dialect === 'blanks',
+    marks: dialect === 'marks',
+    lines: !html && field?.widget === 'textarea'
+  }
 }
 
-/** The format as the outline names it: `text`, or `html: strong em`, and the blank's rule. */
+/** The format as the outline names it: `text`, or `html: strong em`, and the dialect's rule. */
 export function describeFormat(format) {
   const base = format.tags.length ? `html: ${format.tags.join(' ')}` : 'text'
-  return format.blanks ? `${base}; blank: *word*` : base
+  if (format.blanks) return `${base}; blank: *word*`
+  return format.marks ? `${base}; marked: *word*` : base
 }
 
 const REFERENCES = { '&': '&amp;', '"': '&quot;', "'": '&#039;', '<': '&lt;', '>': '&gt;' }
@@ -107,11 +126,13 @@ export function checkModelText(value, format) {
   if (open.length) return { problem: `<${open[open.length - 1]}> is opened and never closed.` }
   if (/^#{1,6}\s/m.test(text)) return { problem: 'Write no headings: only the text of the field.' }
   if (format.blanks && !/\*[^*\n]+\*/.test(text)) return { problem: 'The answer must stay between asterisks, like *this*.' }
+  if (format.marks && !/\*[^*\n]+\*/.test(text)) return { problem: 'The words to mark must stay between asterisks, like *this*.' }
   return { text }
 }
 
 /**
- * Checked text as the field holds it. A plain text field gets one escaped line. A field with
+ * Checked text as the field holds it. A plain text field gets one escaped line, or its lines
+ * where the author types several (`lines`). A field with
  * tags gets everything escaped and then its allowed tags back, and paragraphs wrapped as the
  * field's previous value wrapped them — `<p>` with its attributes kept, or `<div>` — since H5P's
  * validator allows those wrappers in every html field whatever its tags.
@@ -120,7 +141,7 @@ export function checkModelText(value, format) {
  * @param {string} [previous] the field's value before
  */
 export function toHtml(text, format, previous = '') {
-  if (!format.html) return escapeHtml(text.replace(/\s*\n\s*/g, ' '))
+  if (!format.html) return escapeHtml(format.lines ? text : text.replace(/\s*\n\s*/g, ' '))
   const marked = escapeHtml(text).replace(/&lt;(\/?)([a-zA-Z][a-zA-Z0-9]*)&gt;/g, (match, close, name) => {
     const tag = SYNONYMS[name.toLowerCase()] ?? name.toLowerCase()
     return format.tags.includes(tag) ? `<${close}${tag}>` : match

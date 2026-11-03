@@ -40,7 +40,9 @@ apply takes the changes as JSON, from a file, or - for standard input:
   [html: strong em ...]  text in which only the tags listed may mark words; no <p>, <br>
                          or attributes: an empty line starts a new paragraph
   [...; blank: *word*]   the word between asterisks is the blank
+  [...; marked: *word*]  the words between asterisks are the ones to mark
   [true/false], [a/b/c], [number 0-100]
+  [read only]            shown, not changed
   It writes <out.h5p>, never over a file, with those fields changed and nothing else, or
   writes nothing and says by id what it refused.`
 

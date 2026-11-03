@@ -12,7 +12,7 @@ import { withContent } from '../src/package/working-copy.js'
 import { contentModel, editable } from '../src/semantics/content-model.js'
 import { checkModelText, describeFormat, formatOf, stripMarkup, toHtml, toModel } from '../src/semantics/dialects.js'
 import { editorLibraries, labelled } from '../src/semantics/libraries.js'
-import { outline } from '../src/semantics/outline.js'
+import { lineFor, outline } from '../src/semantics/outline.js'
 import { PARTS_DIR } from '../scripts/pack-parts.mjs'
 
 /**
@@ -145,11 +145,15 @@ describe('the formats', () => {
   const plain = formatOf({ type: 'text' })
   const rich = formatOf({ type: 'text', tags: ['strong', 'em', 'sub', 'sup', 'h2', 'a', 'p'] })
   const blanks = formatOf({ type: 'text', tags: ['strong', 'em', 'u', 'del', 'code'] }, 'blanks')
+  const marks = formatOf({ type: 'text', tags: ['p', 'br', 'strong', 'em', 'code'] }, 'marks')
+  const lines = formatOf({ type: 'text', widget: 'textarea' })
 
   it("come from the field's own tags: inline ones only", async () => {
     expect(describeFormat(plain)).toBe('text')
     expect(describeFormat(rich)).toBe('html: strong em sub sup')
     expect(describeFormat(blanks)).toBe('html: strong em u del code; blank: *word*')
+    expect(describeFormat(marks)).toBe('html: strong em code; marked: *word*')
+    expect(describeFormat(lines)).toBe('text')
   })
 
   it('accept text that keeps to them', async () => {
@@ -169,6 +173,7 @@ describe('the formats', () => {
     expect(checkModelText('A <strong>word', rich)).toEqual({ problem: '<strong> is opened and never closed.' })
     expect(checkModelText('# Water on Earth', plain)).toEqual({ problem: 'Write no headings: only the text of the field.' })
     expect(checkModelText('Rivers flow to the sea.', blanks)).toEqual({ problem: 'The answer must stay between asterisks, like *this*.' })
+    expect(checkModelText('Rivers flow to the sea.', marks)).toEqual({ problem: 'The words to mark must stay between asterisks, like *this*.' })
     expect(checkModelText('  ', plain)).toEqual({ problem: 'The text is empty.' })
   })
 
@@ -176,6 +181,9 @@ describe('the formats', () => {
     expect(toHtml('A <b>bold</b> & <em>soft</em> word', rich, '<p style="text-align: center;">x</p>')).toBe('<p style="text-align: center;">A <strong>bold</strong> &amp; <em>soft</em> word</p>')
     expect(toHtml('One\ntwo\n\nThree', rich, '<div>x</div>')).toBe('<div>One<br>two</div><div>Three</div>')
     expect(toHtml("Plain 'text' & 5 < 7", plain)).toBe('Plain &#039;text&#039; &amp; 5 &lt; 7')
+    // A plain field typed in one line takes one line; one typed in several, as Drag the Words' text, keeps them.
+    expect(toHtml('One\ntwo', plain)).toBe('One two')
+    expect(toHtml("One\nand 'two'", lines)).toBe('One\nand &#039;two&#039;')
   })
 
   it('read a value back in the same format the model writes it', async () => {
@@ -238,6 +246,15 @@ describe('the edits', () => {
     expect(violations[2].problem).toBe('At most 100.')
     expect(applied).toEqual([])
     expect(applyChanges(content.params, { [id('Pass percentage')]: 60 }, byId).applied).toEqual([{ id: id('Pass percentage'), label: 'Pass percentage', from: 50, to: 60 }])
+  })
+
+  it("shows a choice among the content's own items, as a drop zone's correct elements, and refuses a change to it", () => {
+    // Drag and Drop's correct elements: a select whose options are the question's own elements, by index.
+    const node = { kind: 'select' as const, path: ['dropZones', 0, 'correctElements'], label: 'Select correct elements', depth: 0, library: 'H5P.DragQuestion', field: { name: 'correctElements', type: 'select', widget: 'dynamicCheckboxes' }, value: ['0'], content: true }
+    expect(lineFor('s1', node)).toBe('s1 Select correct elements [read only]: 0')
+    const { applied, violations } = applyChanges({ dropZones: [{ correctElements: ['0'] }] }, { s1: ['1'] }, new Map([['s1', node]]))
+    expect(applied).toEqual([])
+    expect(violations).toEqual([{ id: 's1', label: 'Select correct elements [read only]', kind: 'value', problem: 'This field is shown, not changed here.' }])
   })
 
   it('keeps asterisks in a Fill in the Blanks line, with tags where the field allows them', async () => {

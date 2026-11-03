@@ -224,6 +224,36 @@ describe('apply', () => {
   })
 })
 
+describe('what real packages taught (2026-11-03)', () => {
+  const RIVERS = { title: 'Rivers', language: 'en', license: 'CC BY', licenseVersion: '4.0', authors: AUTHORS }
+
+  it("keeps a Drag the Words text's lines and its blanks", async () => {
+    const file = join(dir, 'words.h5p')
+    await buildPackage({ ...RIVERS, type: 'H5P.DragText', params: { textField: 'The *Danube* flows east.\nThe *Rhine* flows north.' } }, file)
+    const source = await openAsBlob(file)
+    const opened = await openForEdit(source, pack)
+    const text = idOf(opened, 'params.textField')
+    expect(outlineOf(opened).text).toContain(`${text} Text [text; blank: *word*]: "The *Danube* flows east.\\nThe *Rhine* flows north."`)
+    // A line's words changed, and the line break between the two kept, as H5P's editor keeps it.
+    const result = editContent(opened, { [text]: 'The *Danube* flows east, to the Black Sea.\nThe *Rhine* flows north.' })
+    expect(result.violations).toEqual([])
+    expect(result.params.textField).toBe('The *Danube* flows east, to the Black Sea.\nThe *Rhine* flows north.')
+    // Without its asterisks the text would play with nothing to drag: refused.
+    expect(editContent(opened, { [text]: 'The Danube flows east.\nThe Rhine flows north.' }).violations.map(({ id, problem }) => [id, problem])).toEqual([[text, 'The answer must stay between asterisks, like *this*.']])
+    await plays(await rewritePackage(source, { params: result.params }), 'words-edited.h5p')
+  })
+
+  it('keeps the words a Mark the Words text marks', async () => {
+    const file = join(dir, 'marks.h5p')
+    await buildPackage({ ...RIVERS, type: 'H5P.MarkTheWords', params: { taskDescription: 'Click the verbs.', textField: 'Rivers *flow* to the sea and *carry* sand.' } }, file)
+    const opened = await openForEdit(await openAsBlob(file), pack)
+    const text = idOf(opened, 'params.textField')
+    expect(outlineOf(opened).text).toContain(`${text} Textfield [html: strong em code; marked: *word*]: "Rivers *flow* to the sea and *carry* sand."`)
+    expect(editContent(opened, { [text]: 'Rivers flow to the sea and carry sand.' }).violations.map(({ id, problem }) => [id, problem])).toEqual([[text, 'The words to mark must stay between asterisks, like *this*.']])
+    expect(editContent(opened, { [text]: 'Rivers *flow* to the sea and *bring* sand.' }).violations).toEqual([])
+  })
+})
+
 describe('the command line', () => {
   const command = join(import.meta.dirname, '..', 'toolset', 'h5p-edit.mjs')
   const h5pEdit = (...args: string[]) => run(process.execPath, [command, ...args]).then(

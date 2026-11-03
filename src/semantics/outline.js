@@ -90,7 +90,8 @@ export function formatHint(node) {
     case 'boolean':
       return 'true/false'
     case 'select':
-      return (field.options ?? []).map((option) => option.value).join('/')
+      // A choice among the content's own items, as a drop zone's correct elements, lists no options: shown, not changed.
+      return field.options?.length ? field.options.map((option) => option.value).join('/') : 'read only'
     case 'number':
       // One bound alone, as an end screen's id has (at most 0), is said in words: "number -0" reads as a value.
       if (field.min !== undefined && field.max !== undefined) return `number ${field.min}-${field.max}`

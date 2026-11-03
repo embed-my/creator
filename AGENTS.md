@@ -141,10 +141,17 @@ pnpm h5p-edit apply <file.h5p> <changes.json | -> <out.h5p> [--json]
   pins where it does not (`packageLibraries`, `loadLibraries`), so a content-only package, as
   Create makes them, edits as well as a full one. Exit status 0 written or nothing to change,
   1 refused, 2 not run.
-- **What it does not do yet:** add, remove or move list items; media; the content model shows
-  every field of a list item as content, which suits the four text kinds and is noisy for a
-  Branching Scenario (its hidden `nextContentId`s are listed, and guarded by the build's check).
-  Still to settle: a skill, MCP tools or both, and where the commands live (notes, question 31).
+- **Tried on 99 real packages** of 27 types (2026-11-03, notes, question 31): every one outlines
+  in under 0.6 s; a quiz, Dialog Cards, a Course Presentation and an Interactive Video were edited
+  and play, with only `content/content.json` changed. 29 already held problems their editors let
+  through (407 in all), which stay counted, not refused.
+- **What it does not do yet:** add, remove or move list items; media; the package's title; a
+  translation's interface texts and h5p.json's `language`, so a translated package keeps its old
+  buttons. The content model shows every field of a list item as content, which suits the four
+  text kinds and floods the rest: on the real packages, 72% of the default outline's lines are
+  such settings (positions and sizes H5P's editor never shows, opacities, Course Presentation's
+  button settings, Interactive Video's timing). Showing only the answer key there would cut the
+  outlines by two thirds. Still to settle: a skill, MCP tools or both, and where the commands live.
 
 ## Layout
 
@@ -182,7 +189,8 @@ src/
                       editable(); outline.js: the numbered lines the model reads, ids per turn
                       (stableIds for the toolset); dialects.js: each field's format from its
                       semantics' tags — [text] or [html: the inline tags it allows] — and the
-                      check that refuses text breaking it, with the rule; the Blanks dialect;
+                      check that refuses text breaking it, with the rule; the asterisk
+                      dialects (Fill in the Blanks, Drag the Words, Mark the Words);
                       libraries.js: editorLibraries, h5p-author's loadLibraries with each
                       library's translation laid over the labels and descriptions
   edit/               operations.js: { changes } applied with each field's checks, refusals by
@@ -281,10 +289,22 @@ That file is GPL and the published runtime has only `dist/`, so it is not used h
   not contain its own answer.
 - **Use a fresh `crypto.randomUUID()` for every sub-content's `subContentId`.** h5p-author's
   generator does, unless it is handed an `id` for the same bytes every run.
+- **Keep a text area's lines.** A plain text field typed in several lines (`widget: "textarea"`,
+  Drag the Words' text and five more in the pack) keeps its line breaks, as H5P's validator does,
+  and Drag the Words shows them. Until 2026-11-03 any change joined them into one line.
+- **Refuse what empties an exercise.** Drag the Words or Mark the Words with every asterisk gone
+  plays and passes verify, with nothing to drag or mark; its dialect refuses it, as Fill in the
+  Blanks' does.
 
 ## Left to do
 
-1. **What the first real runs found** (`evals/RESULTS.md`, 2026-10-22). Gemma 4 E4B with thinking
+1. **The agent toolset, from the trial on real packages** (notes, question 31): inside list items,
+   only the answer key as content (fields named `correct…` or marked `importance: "high"`), the
+   rest settings, `widget: "none"` never shown, colours settings, an interaction's time and a
+   score range's bounds in the item's heading; the title as a field; a language change in
+   `apply` (h5p.json's `language`, the interface texts from the libraries' translations); then
+   the local `h5p-edit` skill and `insert`/`remove`/`move` (item 3).
+2. **What the first real runs found** (`evals/RESULTS.md`, 2026-10-22). Gemma 4 E4B with thinking
    on got 15 of 23 runs right, at a median of 20 s. Without thinking, models fail a third. Qwen3.5
    4B thinks for minutes per edit. Done on 2026-10-22, not yet measured: H5P's field descriptions
    in the outline for empty slots and settings, `changeNote` (what a turn changed, in code's
@@ -296,14 +316,14 @@ That file is GPL and the published runtime has only `dist/`, so it is not used h
    Still to try: a model of about 9B (only with the owner's go-ahead: it is slow on 16 GB), LM
    Studio and Ollama. Then run Create once per model and give Create an eval mode of its own
    (USE-CASES.md, #1–#2).
-2. **The rest of the first slice** (ARCHITECTURE.md, decision log): `semantics/classify` (the
+3. **The rest of the first slice** (ARCHITECTURE.md, decision log): `semantics/classify` (the
    semantics of every library in the pack are loaded by h5p-author since 2026-11-03), `insert`/`remove`/`move` for lists with recipes,
    `history`, the export with the pack's libraries, and the chat in `app/` in place of the
    eval page's controls.
-3. **The desktop app beyond this Mac.** Builds for Windows and Linux in CI, and the desktop check
+4. **The desktop app beyond this Mac.** Builds for Windows and Linux in CI, and the desktop check
    run there; `pnpm tauri dev`; signed installers; the key in the system's keychain instead of the
    window's storage.
-4. **Close issue #47** in missing-elements/h5p-offline-player, linking this repository.
+5. **Close issue #47** in missing-elements/h5p-offline-player, linking this repository.
 
 Done: the page, Create and Save (2026-10-19), and the browser tests with a stand-in model; the
 desktop app and its check, and local models through the OpenAI-compatible API in place of Chrome's

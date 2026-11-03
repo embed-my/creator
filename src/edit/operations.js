@@ -146,6 +146,7 @@ function parse(node, given) {
       return { value: number }
     }
     case 'select': {
+      if (!field.options?.length) return { problem: 'This field is shown, not changed here.', kind: 'value' }
       const word = String(given ?? '').trim().toLowerCase()
       const option = (field.options ?? []).find((each) => String(each.value).toLowerCase() === word)
       return option ? { value: option.value } : { problem: `One of: ${(field.options ?? []).map((each) => each.value).join(', ')}.`, kind: 'value' }
